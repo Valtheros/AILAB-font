@@ -30,88 +30,41 @@ import {
   Save,
   Play,
   Info,
+  CheckCircle,
 } from "lucide-react";
 import { useState } from "react";
 import Link from "next/link";
-
-// Default training configuration based on Ultralytics documentation
-const defaultConfig = {
-  // Model Settings
-  model: "yolo11n.pt",
-  pretrained: true,
-
-  // Training Settings
-  epochs: 100,
-  patience: 100,
-  batch: 16,
-  imgsz: 640,
-  device: "0",
-  workers: 8,
-  cache: false,
-  amp: true,
-  fraction: 1.0,
-
-  // Optimizer Settings
-  optimizer: "auto",
-  lr0: 0.01,
-  lrf: 0.01,
-  momentum: 0.937,
-  weight_decay: 0.0005,
-  cos_lr: false,
-
-  // Warmup Settings
-  warmup_epochs: 3.0,
-  warmup_momentum: 0.8,
-  warmup_bias_lr: 0.1,
-
-  // Loss Weights
-  box: 7.5,
-  cls: 0.5,
-  dfl: 1.5,
-
-  // Augmentation Settings
-  hsv_h: 0.015,
-  hsv_s: 0.7,
-  hsv_v: 0.4,
-  degrees: 0.0,
-  translate: 0.1,
-  scale: 0.5,
-  shear: 0.0,
-  perspective: 0.0,
-  flipud: 0.0,
-  fliplr: 0.5,
-  mosaic: 1.0,
-  mixup: 0.0,
-  copy_paste: 0.0,
-
-  // Advanced Settings
-  save_period: -1,
-  close_mosaic: 10,
-  nbs: 64,
-  dropout: 0.0,
-  seed: 0,
-  deterministic: true,
-  single_cls: false,
-  rect: false,
-  multi_scale: false,
-};
+import { useRouter } from "next/navigation";
+import {
+  useTrainingConfig,
+  defaultConfig,
+  type TrainingConfig,
+} from "@/lib/useTrainingConfig";
 
 export default function ConfigPage() {
-  const [config, setConfig] = useState(defaultConfig);
+  const { config, updateConfig, resetConfig } = useTrainingConfig();
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+  const router = useRouter();
 
-  const updateConfig = (key: string, value: number | string | boolean) => {
-    setConfig((prev) => ({ ...prev, [key]: value }));
-    console.log(`Config updated: ${key} = ${value}`);
-  };
-
-  const resetConfig = () => {
-    setConfig(defaultConfig);
-    console.log("Config reset to defaults");
+  const handleReset = () => {
+    resetConfig();
+    setSaveStatus("idle");
   };
 
   const saveConfig = () => {
-    console.log("Saving config:", config);
-    // Will connect to backend later
+    setSaveStatus("saving");
+    // Zustand persist middleware auto-saves, but we show feedback
+    setTimeout(() => {
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    }, 300);
+  };
+
+  const handleStartTraining = () => {
+    // Config is already in Zustand store (auto-persisted), just navigate
+    router.push("/training");
   };
 
   return (
@@ -131,7 +84,7 @@ export default function ConfigPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={resetConfig}
+              onClick={handleReset}
               className="flex-1 sm:flex-none"
             >
               <RotateCcw className="mr-2 h-4 w-4" />
@@ -142,16 +95,33 @@ export default function ConfigPage() {
               size="sm"
               onClick={saveConfig}
               className="flex-1 sm:flex-none"
+              disabled={saveStatus === "saving"}
             >
-              <Save className="mr-2 h-4 w-4" />
-              Save
+              {saveStatus === "saving" ? (
+                <>
+                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Saving...
+                </>
+              ) : saveStatus === "saved" ? (
+                <>
+                  <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
+                  Saved!
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save
+                </>
+              )}
             </Button>
-            <Link href="/training" className="flex-1 sm:flex-none">
-              <Button size="sm" className="w-full">
-                <Play className="mr-2 h-4 w-4" />
-                Start Training
-              </Button>
-            </Link>
+            <Button
+              size="sm"
+              className="flex-1 sm:flex-none"
+              onClick={handleStartTraining}
+            >
+              <Play className="mr-2 h-4 w-4" />
+              Start Training
+            </Button>
           </div>
         </div>
 
@@ -585,7 +555,7 @@ export default function ConfigPage() {
                       onChange={(e) =>
                         updateConfig(
                           "warmup_epochs",
-                          parseFloat(e.target.value)
+                          parseFloat(e.target.value),
                         )
                       }
                       min={0}
@@ -624,7 +594,7 @@ export default function ConfigPage() {
                       onChange={(e) =>
                         updateConfig(
                           "warmup_bias_lr",
-                          parseFloat(e.target.value)
+                          parseFloat(e.target.value),
                         )
                       }
                       min={0}
