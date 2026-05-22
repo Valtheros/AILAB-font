@@ -1,58 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { useTheme } from "next-themes";
-import { Moon, Sun, Cpu } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Cpu } from "lucide-react";
+import { StatusBadge } from "@/components/workspace/status-badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface NavbarProps {
   mobileMenuButton?: React.ReactNode;
 }
 
 export function Navbar({ mobileMenuButton }: NavbarProps) {
-  const { resolvedTheme, setTheme } = useTheme();
-
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-gray-200 bg-white/80 backdrop-blur-md dark:border-gray-800 dark:bg-black/80">
-      <div className="flex h-full items-center justify-between px-4 md:px-6">
-        {/* Left side - Mobile menu + Logo */}
-        <div className="flex items-center gap-3">
+    <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-border bg-background/90 backdrop-blur">
+      <div className="flex h-full items-center justify-between gap-4 px-4 md:px-6">
+        <div className="flex min-w-0 items-center gap-3">
           {mobileMenuButton}
-          <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-900 dark:bg-white">
-              <Cpu className="h-5 w-5 text-white dark:text-gray-900" />
+          <Link href="/" className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-foreground text-background">
+              <Cpu className="h-4 w-4" />
             </div>
-            <div className="hidden flex-col sm:flex">
-              <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">
-                Model Train
-              </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                AI Training Platform
-              </span>
+            <div className="hidden min-w-0 sm:block">
+              <p className="truncate text-sm font-semibold">Vision Console</p>
+              <p className="truncate text-xs text-muted-foreground">
+                CV training workspace
+              </p>
             </div>
           </Link>
         </div>
 
-        {/* Right side */}
-        <div className="flex items-center gap-2 md:gap-4">
-          {/* Theme Toggle */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-            aria-label="Toggle theme"
-          >
-            <Sun className="hidden h-5 w-5 dark:block" />
-            <Moon className="h-5 w-5 dark:hidden" />
-          </Button>
-
-          {/* Status indicator */}
-          <div className="flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1.5 dark:border-gray-800">
-            <div className="h-2 w-2 rounded-full bg-green-500" />
-            <span className="hidden text-xs font-medium text-gray-600 dark:text-gray-400 sm:inline">
-              Ready
-            </span>
-          </div>
+        <div className="flex items-center gap-2">
+          <StatusBadge tone="success">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Ready
+          </StatusBadge>
+          <ThemeToggle />
         </div>
       </div>
     </header>
