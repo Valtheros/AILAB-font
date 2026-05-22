@@ -1,6 +1,19 @@
 "use client";
 
+import Link from "next/link";
+import {
+  Activity,
+  ArrowRight,
+  Boxes,
+  Database,
+  Download,
+  FileSliders,
+  Layers3,
+  Play,
+  ScanText,
+} from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -8,254 +21,179 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import {
-  Database,
-  Settings,
-  Play,
-  Download,
-  ArrowRight,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react";
-import Link from "next/link";
+import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/workspace/page-header";
+import { StatusBadge } from "@/components/workspace/status-badge";
 
 const quickActions = [
   {
-    title: "Upload Dataset",
-    description: "เพิ่ม Dataset สำหรับ Training",
-    icon: Database,
+    title: "Upload dataset",
+    description: "Bring ZIP datasets into the workspace.",
     href: "/dataset",
-    color: "bg-gray-100 dark:bg-gray-800",
+    icon: Database,
   },
   {
-    title: "Configure Model",
-    description: "ปรับค่า Training Parameters",
-    icon: Settings,
+    title: "Configure run",
+    description: "Choose tasks, models, and parameters.",
     href: "/config",
-    color: "bg-gray-100 dark:bg-gray-800",
+    icon: FileSliders,
   },
   {
-    title: "Start Training",
-    description: "เริ่ม Training Model",
-    icon: Play,
+    title: "Open monitor",
+    description: "Start or inspect a training job.",
     href: "/training",
-    color: "bg-gray-100 dark:bg-gray-800",
+    icon: Play,
   },
   {
-    title: "View Results",
-    description: "ดูผลลัพธ์และดาวน์โหลด Model",
-    icon: Download,
+    title: "Browse results",
+    description: "Download metrics and artifacts.",
     href: "/results",
-    color: "bg-gray-100 dark:bg-gray-800",
+    icon: Download,
   },
 ];
 
-const recentActivities = [
+const workflowStages = [
   {
-    id: 1,
-    type: "completed",
-    message: "Training completed: custom_model_v1",
-    time: "2 hours ago",
-    icon: CheckCircle2,
-    iconColor: "text-green-500",
-  },
-  {
-    id: 2,
-    type: "info",
-    message: "Dataset uploaded: traffic_signs (1,234 images)",
-    time: "5 hours ago",
+    title: "Dataset",
+    description: "Detect formats, classes, and task compatibility.",
     icon: Database,
-    iconColor: "text-gray-500",
   },
   {
-    id: 3,
-    type: "warning",
-    message: "Low GPU memory detected",
-    time: "1 day ago",
-    icon: AlertCircle,
-    iconColor: "text-yellow-500",
+    title: "Configure",
+    description: "Tune shared settings and model-specific parameters.",
+    icon: FileSliders,
   },
+  {
+    title: "Train",
+    description: "Watch job state, logs, progress, and metrics.",
+    icon: Activity,
+  },
+  {
+    title: "Artifact",
+    description: "Collect weights, reports, and OCR outputs.",
+    icon: Layers3,
+  },
+];
+
+const taskFamilies = [
+  { label: "Classification", icon: Boxes },
+  { label: "Segmentation", icon: Layers3 },
+  { label: "OCR", icon: ScanText },
+  { label: "Detection", icon: Activity },
 ];
 
 export default function DashboardPage() {
   return (
     <MainLayout>
-      <div className="space-y-8">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">
-            Dashboard
-          </h1>
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 sm:text-base">
-            ยินดีต้อนรับสู่ Model Training Platform
-          </p>
-        </div>
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Workspace"
+          title="Dashboard"
+          description="Move from datasets to artifacts with one workspace for Computer Vision training."
+          actions={
+            <Button asChild>
+              <Link href="/config">
+                Configure run
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          }
+        />
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Datasets
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                    3
-                  </p>
-                </div>
-                <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center dark:bg-gray-800">
-                  <Database className="h-6 w-6 text-gray-900 dark:text-white" />
-                </div>
+            <CardHeader>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone="success">Worker ready</StatusBadge>
+                <StatusBadge>4 task families</StatusBadge>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Trained Models
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                    7
-                  </p>
-                </div>
-                <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center dark:bg-gray-800">
-                  <CheckCircle2 className="h-6 w-6 text-gray-900 dark:text-white" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Training Hours
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                    24.5
-                  </p>
-                </div>
-                <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center dark:bg-gray-800">
-                  <Clock className="h-6 w-6 text-gray-900 dark:text-white" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    GPU Status
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-green-500" />
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                      Ready
+              <CardTitle>Training Console</CardTitle>
+              <CardDescription>
+                A compact run path for classification, segmentation, OCR, and
+                object detection.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 md:grid-cols-4">
+                {workflowStages.map(({ description, icon: Icon, title }, index) => (
+                  <div
+                    className="rounded-lg border border-border bg-background/70 p-4"
+                    key={title}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        0{index + 1}
+                      </span>
+                    </div>
+                    <h2 className="mt-5 text-sm font-semibold">{title}</h2>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {description}
                     </p>
                   </div>
-                </div>
-                <div className="h-12 w-12 rounded-xl bg-gray-100 flex items-center justify-center dark:bg-gray-800">
-                  <Settings className="h-6 w-6 text-gray-900 dark:text-white" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Current Training (if any) */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Current Training</CardTitle>
-            <CardDescription>ไม่มี Training ที่กำลังทำงาน</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <div className="mb-4 h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center dark:bg-gray-800">
-                <Play className="h-8 w-8 text-gray-400" />
-              </div>
-              <p className="text-gray-500 dark:text-gray-400">
-                เริ่มต้น Training ใหม่เพื่อดู Progress ที่นี่
-              </p>
-              <Link href="/config">
-                <Button className="mt-4">
-                  Start New Training
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Quick Actions & Recent Activities */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-              <CardDescription>ทางลัดไปยังหน้าต่างๆ</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                {quickActions.map((action) => (
-                  <Link key={action.href} href={action.href}>
-                    <div className="group cursor-pointer rounded-xl border border-gray-200 p-4 transition-all hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/50">
-                      <div
-                        className={`mb-3 inline-flex h-10 w-10 items-center justify-center rounded-lg ${action.color}`}
-                      >
-                        <action.icon className="h-5 w-5 text-gray-900 dark:text-white" />
-                      </div>
-                      <h3 className="font-medium text-gray-900 dark:text-white">
-                        {action.title}
-                      </h3>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {action.description}
-                      </p>
-                    </div>
-                  </Link>
                 ))}
               </div>
             </CardContent>
           </Card>
 
-          {/* Recent Activities */}
           <Card>
             <CardHeader>
-              <CardTitle>Recent Activities</CardTitle>
-              <CardDescription>กิจกรรมล่าสุด</CardDescription>
+              <CardTitle>Console Status</CardTitle>
+              <CardDescription>
+                Stable signals for the current frontend workflow.
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentActivities.map((activity) => (
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                {taskFamilies.map(({ icon: Icon, label }) => (
                   <div
-                    key={activity.id}
-                    className="flex items-start gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800"
+                    className="rounded-lg border border-border bg-background/70 p-3"
+                    key={label}
                   >
-                    <activity.icon
-                      className={`h-5 w-5 mt-0.5 ${activity.iconColor}`}
-                    />
-                    <div className="flex-1">
-                      <p className="text-sm text-gray-900 dark:text-white">
-                        {activity.message}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {activity.time}
-                      </p>
-                    </div>
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    <p className="mt-4 text-sm font-medium">{label}</p>
                   </div>
                 ))}
               </div>
+              <Separator />
+              <div className="flex flex-wrap gap-2">
+                <StatusBadge tone="success">Catalog ready</StatusBadge>
+                <StatusBadge tone="warning">Backend required for runs</StatusBadge>
+              </div>
             </CardContent>
           </Card>
-        </div>
+        </section>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>
+              Jump into the page that owns each part of the workflow.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {quickActions.map(({ description, href, icon: Icon, title }) => (
+              <Link
+                className="group rounded-lg border border-border bg-background/70 p-4 transition-colors hover:bg-accent"
+                href={href}
+                key={href}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-md border border-border">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                </div>
+                <h2 className="mt-6 text-sm font-semibold">{title}</h2>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {description}
+                </p>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     </MainLayout>
   );
