@@ -8,13 +8,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { EmptyState } from "@/components/workspace/empty-state";
+import { PageHeader } from "@/components/workspace/page-header";
+import { StatusBadge } from "@/components/workspace/status-badge";
 import {
   AlertCircle,
   Archive,
   CheckCircle2,
   Database,
+  FileArchive,
   FolderOpen,
   Image as ImageIcon,
   RefreshCw,
@@ -43,9 +48,13 @@ export default function DatasetPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
+  const [uploadStatus, setUploadStatus] = useState<
+    "idle" | "uploading" | "success" | "error"
+  >("idle");
   const [uploadMessage, setUploadMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -53,10 +62,18 @@ export default function DatasetPage() {
     setIsLoading(true);
     try {
       const response = await fetch(`${API_URL}/api/datasets`);
-      const data = response.ok ? await response.json() : { datasets: [] };
+      if (!response.ok) {
+        throw new Error(`Dataset service returned ${response.status}`);
+      }
+      const data = await response.json();
       setDatasets(data.datasets ?? []);
+      setLoadError("");
     } catch (error) {
       console.error("Failed to fetch datasets:", error);
+      setDatasets([]);
+      setLoadError(
+        "Dataset service unavailable. Start the backend and refresh this page.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -83,7 +100,11 @@ export default function DatasetPage() {
       formData.append("file", file);
       const xhr = new XMLHttpRequest();
 
-      const result = await new Promise<{ dataset_name: string; tasks?: string[]; formats?: string[] }>((resolve, reject) => {
+      const result = await new Promise<{
+        dataset_name: string;
+        tasks?: string[];
+        formats?: string[];
+      }>((resolve, reject) => {
         xhr.upload.addEventListener("progress", (event) => {
           if (event.lengthComputable) {
             setUploadProgress(Math.round((event.loaded / event.total) * 100));
@@ -128,150 +149,212 @@ export default function DatasetPage() {
 
   const handleDelete = async (datasetName: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/datasets/${encodeURIComponent(datasetName)}`, {
-        method: "DELETE",
-      });
-      if (response.ok) {
-        setDeleteConfirm(null);
-        await fetchDatasets();
+      const response = await fetch(
+        `${API_URL}/api/datasets/${encodeURIComponent(datasetName)}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        throw new Error(`Delete failed with status ${response.status}`);
       }
+      setDeleteError("");
+      setDeleteConfirm(null);
+      await fetchDatasets();
     } catch (error) {
       console.error("Failed to delete dataset:", error);
+      setDeleteError(`Could not delete ${datasetName}. Check the backend and retry.`);
     }
   };
 
   return (
     <MainLayout>
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">Dataset Management</h1>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              Upload ZIP datasets for detection, classification, segmentation, or OCR training.
-            </p>
-          </div>
-          <Button variant="outline" onClick={fetchDatasets} disabled={isLoading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-        </div>
+        <PageHeader
+          eyebrow="Data"
+          title="Dataset Management"
+          description="Upload ZIP datasets, inspect detected formats, and keep training inputs compatible with the selected model."
+          actions={
+            <Button variant="outline" onClick={fetchDatasets} disabled={isLoading}>
+              <RefreshCw className={isLoading ? "animate-spin" : ""} />
+              Refresh
+            </Button>
+          }
+        />
+
+        <section className="grid gap-4 xl:grid-cols-[1.1fr_.9fr]">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap gap-2">
+                <StatusBadge tone={uploadStatus === "error" ? "danger" : "neutral"}>
+                  ZIP upload
+                </StatusBadge>
+                <Badge variant="secondary">Format detection</Badge>
+              </div>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Upload Dataset
+              </CardTitle>
+              <CardDescription>
+                Supported: YOLO detection, ImageFolder classification, semantic
+                masks, COCO instances, PaddleOCR labels, and Tesseract ground truth.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".zip"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) uploadFile(file);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              />
+              <div
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsDragging(false);
+                  const file = event.dataTransfer.files?.[0];
+                  if (file) uploadFile(file);
+                }}
+                onClick={() => !isUploading && fileInputRef.current?.click()}
+                className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition-colors sm:p-10 ${
+                  isDragging
+                    ? "border-foreground bg-accent"
+                    : "border-border bg-background/70 hover:bg-accent/70"
+                }`}
+              >
+                <div className="flex flex-col items-center">
+                  {uploadStatus === "uploading" ? (
+                    <>
+                      <Archive className="mb-4 h-10 w-10 animate-pulse text-muted-foreground" />
+                      <StatusBadge tone="warning">Uploading</StatusBadge>
+                      <p className="mt-3 font-medium">{uploadMessage}</p>
+                      <div className="mt-4 w-full max-w-sm">
+                        <Progress value={uploadProgress} className="h-2" />
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {uploadProgress}%
+                        </p>
+                      </div>
+                    </>
+                  ) : uploadStatus === "success" ? (
+                    <>
+                      <CheckCircle2 className="mb-4 h-10 w-10 text-emerald-500" />
+                      <StatusBadge tone="success">Upload complete</StatusBadge>
+                      <p className="mt-3 max-w-lg font-medium">{uploadMessage}</p>
+                    </>
+                  ) : uploadStatus === "error" ? (
+                    <>
+                      <AlertCircle className="mb-4 h-10 w-10 text-red-500" />
+                      <StatusBadge tone="danger">Upload failed</StatusBadge>
+                      <p className="mt-3 max-w-lg font-medium">{uploadMessage}</p>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mb-4 h-10 w-10 text-muted-foreground" />
+                      <p className="font-medium">Drop a dataset ZIP here</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        or click to select a file
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-4"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                        Select ZIP
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Detection Notes</CardTitle>
+              <CardDescription>
+                Metadata appears after the backend inspects the archive.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {[
+                "Detected task families are surfaced as status chips.",
+                "Formats gate compatible model choices in configuration.",
+                "Classes and warnings stay attached to each dataset row.",
+              ].map((note) => (
+                <div
+                  className="flex gap-3 rounded-lg border border-border bg-background/70 p-3"
+                  key={note}
+                >
+                  <FileArchive className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <p className="text-sm leading-6 text-muted-foreground">{note}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </section>
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Upload Dataset
-            </CardTitle>
+            <CardTitle>Dataset Inventory</CardTitle>
             <CardDescription>
-              Supported: YOLO detection, ImageFolder classification, semantic masks, COCO instances,
-              PaddleOCR labels, and Tesseract ground truth.
+              {isLoading ? "Loading datasets..." : `${datasets.length} datasets available`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".zip"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) uploadFile(file);
-                if (fileInputRef.current) fileInputRef.current.value = "";
-              }}
-            />
-            <div
-              onDragOver={(event) => {
-                event.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={(event) => {
-                event.preventDefault();
-                setIsDragging(false);
-                const file = event.dataTransfer.files?.[0];
-                if (file) uploadFile(file);
-              }}
-              onClick={() => !isUploading && fileInputRef.current?.click()}
-              className={`cursor-pointer rounded-lg border-2 border-dashed p-10 text-center transition-colors ${
-                isDragging
-                  ? "border-gray-900 bg-gray-100 dark:border-white dark:bg-gray-900"
-                  : "border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900"
-              }`}
-            >
-              <div className="flex flex-col items-center">
-                {uploadStatus === "uploading" ? (
-                  <>
-                    <Archive className="mb-4 h-10 w-10 animate-pulse text-blue-500" />
-                    <p className="font-medium text-gray-900 dark:text-white">{uploadMessage}</p>
-                    <div className="mt-4 w-full max-w-sm">
-                      <Progress value={uploadProgress} className="h-2" />
-                      <p className="mt-2 text-sm text-gray-500">{uploadProgress}%</p>
-                    </div>
-                  </>
-                ) : uploadStatus === "success" ? (
-                  <>
-                    <CheckCircle2 className="mb-4 h-10 w-10 text-green-500" />
-                    <p className="font-medium text-green-600 dark:text-green-400">{uploadMessage}</p>
-                  </>
-                ) : uploadStatus === "error" ? (
-                  <>
-                    <AlertCircle className="mb-4 h-10 w-10 text-red-500" />
-                    <p className="font-medium text-red-600 dark:text-red-400">{uploadMessage}</p>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="mb-4 h-10 w-10 text-gray-400" />
-                    <p className="font-medium text-gray-900 dark:text-white">Drop a dataset ZIP here</p>
-                    <p className="mt-1 text-sm text-gray-500">or click to select a file</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-4"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        fileInputRef.current?.click();
-                      }}
-                    >
-                      <FolderOpen className="mr-2 h-4 w-4" />
-                      Select ZIP
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Your Datasets</CardTitle>
-            <CardDescription>{isLoading ? "Loading..." : `${datasets.length} datasets available`}</CardDescription>
-          </CardHeader>
-          <CardContent>
             {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
-                <p className="mt-4 text-gray-500">Loading datasets...</p>
-              </div>
+              <EmptyState
+                icon={RefreshCw}
+                title="Loading datasets"
+                description="Waiting for the backend inventory response."
+              />
+            ) : loadError ? (
+              <EmptyState
+                icon={AlertCircle}
+                title="Dataset service unavailable"
+                description={loadError}
+                actions={
+                  <Button variant="outline" onClick={fetchDatasets}>
+                    Retry
+                  </Button>
+                }
+              />
             ) : datasets.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <ImageIcon className="h-12 w-12 text-gray-300 dark:text-gray-700" />
-                <p className="mt-4 text-gray-500">No datasets yet</p>
-              </div>
+              <EmptyState
+                icon={ImageIcon}
+                title="No datasets yet"
+                description="Upload a ZIP archive to make it available for model configuration."
+              />
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
+                {deleteError && (
+                  <StatusBadge tone="danger" className="w-fit">
+                    {deleteError}
+                  </StatusBadge>
+                )}
                 {datasets.map((dataset) => (
-                  <div
+                  <article
                     key={dataset.id}
-                    className="flex flex-col gap-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between"
+                    className="flex flex-col gap-4 rounded-lg border border-border bg-background/70 p-4 lg:flex-row lg:items-center lg:justify-between"
                   >
-                    <div className="flex gap-4">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-900">
-                        <Database className="h-6 w-6 text-gray-600 dark:text-gray-400" />
+                    <div className="flex min-w-0 gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-border bg-card">
+                        <Database className="h-5 w-5 text-muted-foreground" />
                       </div>
-                      <div>
-                        <h3 className="font-medium text-gray-900 dark:text-white">{dataset.name}</h3>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
+                      <div className="min-w-0">
+                        <h2 className="break-words font-medium">{dataset.name}</h2>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                           <span>{dataset.images.toLocaleString()} images</span>
                           <span>{dataset.classes?.length ?? 0} classes</span>
                           <span>{dataset.size}</span>
@@ -279,22 +362,18 @@ export default function DatasetPage() {
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {(dataset.tasks ?? []).map((task) => (
-                            <span key={task} className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                              {task}
-                            </span>
+                            <StatusBadge key={task}>{task}</StatusBadge>
                           ))}
                           {(dataset.formats ?? []).map((format) => (
-                            <span key={format} className="rounded-full border border-gray-200 px-2 py-1 text-xs text-gray-500 dark:border-gray-800">
+                            <Badge key={format} variant="secondary">
                               {format}
-                            </span>
+                            </Badge>
                           ))}
                         </div>
                         {dataset.classes?.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
+                          <div className="mt-3 flex flex-wrap gap-1.5">
                             {dataset.classes.slice(0, 10).map((className) => (
-                              <span key={className} className="text-xs text-gray-500">
-                                {className}
-                              </span>
+                              <Badge key={className}>{className}</Badge>
                             ))}
                           </div>
                         )}
@@ -303,20 +382,34 @@ export default function DatasetPage() {
                     <div className="flex items-center gap-2 self-end lg:self-auto">
                       {deleteConfirm === dataset.id ? (
                         <>
-                          <Button variant="destructive" size="sm" onClick={() => handleDelete(dataset.name)}>
-                            Confirm
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleDelete(dataset.name)}
+                          >
+                            Confirm delete
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(null)}>
+                          <Button
+                            aria-label="Cancel delete"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteConfirm(null)}
+                          >
                             <X className="h-4 w-4" />
                           </Button>
                         </>
                       ) : (
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(dataset.id)}>
+                        <Button
+                          aria-label={`Delete ${dataset.name}`}
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteConfirm(dataset.id)}
+                        >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       )}
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
             )}

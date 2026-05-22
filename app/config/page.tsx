@@ -1,6 +1,8 @@
 "use client";
 
 import { MainLayout } from "@/components/MainLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -8,10 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -19,6 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { PageHeader } from "@/components/workspace/page-header";
+import { StatusBadge } from "@/components/workspace/status-badge";
 import {
   Activity,
   Boxes,
@@ -31,8 +34,8 @@ import {
   Save,
   Settings,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import {
   CVCatalog,
   ModelSpec,
@@ -64,7 +67,9 @@ const taskIcons: Record<string, ComponentType<{ className?: string }>> = {
 };
 
 function isDatasetCompatible(dataset: Dataset, model: ModelSpec) {
-  return model.dataset_formats.some((format) => dataset.formats?.includes(format));
+  return model.dataset_formats.some((format) =>
+    dataset.formats?.includes(format),
+  );
 }
 
 function coerceValue(spec: ParamSpec, raw: string | boolean): ConfigValue {
@@ -89,12 +94,16 @@ function ParamInput({
 }) {
   if (spec.type === "boolean") {
     return (
-      <div className="flex min-h-24 items-center justify-between rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+      <div className="flex min-h-24 items-center justify-between rounded-lg border border-border bg-background/70 p-4">
         <div className="pr-4">
           <Label>{spec.label}</Label>
-          {spec.description && <p className="mt-1 text-xs text-gray-500">{spec.description}</p>}
+          {spec.description && (
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {spec.description}
+            </p>
+          )}
         </div>
-        <Switch checked={Boolean(value)} onCheckedChange={(checked) => onChange(checked)} />
+        <Switch checked={Boolean(value)} onCheckedChange={onChange} />
       </div>
     );
   }
@@ -103,7 +112,10 @@ function ParamInput({
     return (
       <div className="space-y-2">
         <Label>{spec.label}</Label>
-        <Select value={String(value ?? spec.default)} onValueChange={(next) => onChange(next)}>
+        <Select
+          value={String(value ?? spec.default)}
+          onValueChange={(next) => onChange(next)}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -115,7 +127,11 @@ function ParamInput({
             ))}
           </SelectContent>
         </Select>
-        {spec.description && <p className="text-xs text-gray-500">{spec.description}</p>}
+        {spec.description && (
+          <p className="text-xs leading-5 text-muted-foreground">
+            {spec.description}
+          </p>
+        )}
       </div>
     );
   }
@@ -131,33 +147,70 @@ function ParamInput({
         step={spec.step}
         onChange={(event) => onChange(coerceValue(spec, event.target.value))}
       />
-      {spec.description && <p className="text-xs text-gray-500">{spec.description}</p>}
+      {spec.description && (
+        <p className="text-xs leading-5 text-muted-foreground">
+          {spec.description}
+        </p>
+      )}
     </div>
   );
 }
 
 export default function ConfigPage() {
   const router = useRouter();
-  const { config, updateConfig, updateParam, setTaskModel, resetConfig } = useTrainingConfig();
+  const { config, updateConfig, updateParam, setTaskModel, resetConfig } =
+    useTrainingConfig();
   const [catalog, setCatalog] = useState<CVCatalog>(fallbackCatalog);
+  const [catalogSource, setCatalogSource] = useState<"backend" | "fallback">(
+    "backend",
+  );
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [datasetError, setDatasetError] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
 
   useEffect(() => {
-    fetch(`${API_URL}/api/model-catalog`)
-      .then((response) => (response.ok ? response.json() : fallbackCatalog))
-      .then((data) => setCatalog(data))
-      .catch(() => setCatalog(fallbackCatalog));
+    const loadCatalog = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/model-catalog`);
+        if (!response.ok) {
+          throw new Error(`Catalog returned ${response.status}`);
+        }
+        setCatalog(await response.json());
+        setCatalogSource("backend");
+      } catch {
+        setCatalog(fallbackCatalog);
+        setCatalogSource("fallback");
+      }
+    };
 
-    fetch(`${API_URL}/api/datasets`)
-      .then((response) => (response.ok ? response.json() : { datasets: [] }))
-      .then((data) => setDatasets(data.datasets ?? []))
-      .catch(() => setDatasets([]));
+    const loadDatasets = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/datasets`);
+        if (!response.ok) {
+          throw new Error(`Datasets returned ${response.status}`);
+        }
+        const data = await response.json();
+        setDatasets(data.datasets ?? []);
+        setDatasetError("");
+      } catch {
+        setDatasets([]);
+        setDatasetError(
+          "Datasets unavailable. Upload or refresh datasets after the backend is reachable.",
+        );
+      }
+    };
+
+    loadCatalog();
+    loadDatasets();
   }, []);
 
   const selectedTask = getTask(catalog, config.taskType);
   const selectedModel = getModel(catalog, selectedTask.id, config.modelType);
-  const compatibleDatasets = datasets.filter((dataset) => isDatasetCompatible(dataset, selectedModel));
+  const compatibleDatasets = datasets.filter((dataset) =>
+    isDatasetCompatible(dataset, selectedModel),
+  );
 
   const commonSpecs = useMemo(() => catalog.common_params, [catalog]);
   const modelSpecs = selectedModel.params;
@@ -165,12 +218,24 @@ export default function ConfigPage() {
   const handleTaskChange = (taskId: string) => {
     const task = getTask(catalog, taskId);
     const model = task.models[0];
-    setTaskModel(task.id, model.id, model.model_name, defaultParamsFor(model, catalog.common_params));
+    setTaskModel(
+      task.id,
+      model.id,
+      model.model_name,
+      defaultParamsFor(model, catalog.common_params),
+    );
   };
 
   const handleModelChange = (modelId: string) => {
-    const model = selectedTask.models.find((item) => item.id === modelId) ?? selectedTask.models[0];
-    setTaskModel(selectedTask.id, model.id, model.model_name, defaultParamsFor(model, catalog.common_params));
+    const model =
+      selectedTask.models.find((item) => item.id === modelId) ??
+      selectedTask.models[0];
+    setTaskModel(
+      selectedTask.id,
+      model.id,
+      model.model_name,
+      defaultParamsFor(model, catalog.common_params),
+    );
   };
 
   const handleCommonParam = (spec: ParamSpec, value: ConfigValue) => {
@@ -194,44 +259,59 @@ export default function ConfigPage() {
   return (
     <MainLayout>
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">
-              Model Configuration
-            </h1>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              Choose a computer vision task, model family, dataset, and tunable training parameters.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={resetConfig}>
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Reset
-            </Button>
-            <Button variant="outline" size="sm" onClick={saveConfig} disabled={saveStatus === "saving"}>
-              {saveStatus === "saved" ? (
-                <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              {saveStatus === "saved" ? "Saved" : "Save"}
-            </Button>
-            <Button size="sm" onClick={() => router.push("/training")}>
-              <Play className="mr-2 h-4 w-4" />
-              Review Training
-            </Button>
-          </div>
+        <PageHeader
+          eyebrow="Configuration"
+          title="Model Configuration"
+          description="Choose a task, model family, dataset, and trainer parameters before opening the training monitor."
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={resetConfig}>
+                <RotateCcw className="h-4 w-4" />
+                Reset
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={saveConfig}
+                disabled={saveStatus === "saving"}
+              >
+                {saveStatus === "saved" ? (
+                  <CheckCircle className="h-4 w-4 text-emerald-500" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {saveStatus === "saved" ? "Saved" : "Save draft"}
+              </Button>
+              <Button size="sm" onClick={() => router.push("/training")}>
+                <Play className="h-4 w-4" />
+                Review Training
+              </Button>
+            </>
+          }
+        />
+
+        <div className="flex flex-wrap gap-2">
+          {catalogSource === "fallback" ? (
+            <StatusBadge tone="warning">Using local model catalog</StatusBadge>
+          ) : (
+            <StatusBadge tone="success">
+              Backend catalog {catalog.version}
+            </StatusBadge>
+          )}
+          {datasetError && <StatusBadge tone="warning">{datasetError}</StatusBadge>}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_1fr]">
-          <div className="space-y-6">
+        <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
+          <aside className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Settings className="h-5 w-5" />
                   Task
                 </CardTitle>
-                <CardDescription>Backend catalog version: {catalog.version}</CardDescription>
+                <CardDescription>
+                  Pick the workflow family that owns the trainer.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Select value={selectedTask.id} onValueChange={handleTaskChange}>
@@ -247,7 +327,7 @@ export default function ConfigPage() {
                   </SelectContent>
                 </Select>
 
-                <div className="grid grid-cols-1 gap-3">
+                <div className="grid gap-2">
                   {catalog.tasks.map((task) => {
                     const Icon = taskIcons[task.id] ?? Activity;
                     const active = task.id === selectedTask.id;
@@ -257,15 +337,21 @@ export default function ConfigPage() {
                         onClick={() => handleTaskChange(task.id)}
                         className={`rounded-lg border p-3 text-left transition-colors ${
                           active
-                            ? "border-gray-900 bg-gray-50 dark:border-white dark:bg-gray-900"
-                            : "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+                            ? "border-foreground bg-foreground text-background"
+                            : "border-border bg-background/70 hover:bg-accent"
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <Icon className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+                          <Icon className="h-5 w-5 shrink-0" />
                           <div>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">{task.label}</p>
-                            <p className="text-xs text-gray-500">{task.models.length} models</p>
+                            <p className="text-sm font-medium">{task.label}</p>
+                            <p
+                              className={`text-xs ${
+                                active ? "text-background/70" : "text-muted-foreground"
+                              }`}
+                            >
+                              {task.models.length} models
+                            </p>
                           </div>
                         </div>
                       </button>
@@ -282,19 +368,30 @@ export default function ConfigPage() {
                   Dataset
                 </CardTitle>
                 <CardDescription>
-                  Compatible formats: {selectedModel.dataset_formats.join(", ")}
+                  Choose compatible inputs or let the backend use the latest one.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  {selectedModel.dataset_formats.map((format) => (
+                    <Badge variant="secondary" key={format}>
+                      {format}
+                    </Badge>
+                  ))}
+                </div>
                 <Select
                   value={config.datasetName || "none"}
-                  onValueChange={(value) => updateConfig("datasetName", value === "none" ? "" : value)}
+                  onValueChange={(value) =>
+                    updateConfig("datasetName", value === "none" ? "" : value)
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select dataset" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Use latest compatible dataset</SelectItem>
+                    <SelectItem value="none">
+                      Use latest compatible dataset
+                    </SelectItem>
                     {compatibleDatasets.map((dataset) => (
                       <SelectItem key={dataset.id} value={dataset.name}>
                         {dataset.name}
@@ -302,29 +399,40 @@ export default function ConfigPage() {
                     ))}
                   </SelectContent>
                 </Select>
+
                 <div className="space-y-2">
                   {compatibleDatasets.slice(0, 3).map((dataset) => (
-                    <div key={dataset.id} className="rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
+                    <div
+                      key={dataset.id}
+                      className="rounded-lg border border-border bg-background/70 p-3 text-sm"
+                    >
                       <div className="flex items-center justify-between gap-3">
-                        <span className="font-medium text-gray-900 dark:text-white">{dataset.name}</span>
-                        <span className="text-xs text-gray-500">{dataset.size}</span>
+                        <span className="break-words font-medium">{dataset.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {dataset.size}
+                        </span>
                       </div>
-                      <p className="mt-1 text-xs text-gray-500">
-                        {dataset.images.toLocaleString()} images · {dataset.formats.join(", ")}
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {dataset.images.toLocaleString()} images -{" "}
+                        {dataset.formats.join(", ")}
                       </p>
                     </div>
                   ))}
                   {compatibleDatasets.length === 0 && (
-                    <p className="rounded-lg border border-dashed border-gray-300 p-3 text-sm text-gray-500 dark:border-gray-700">
-                      No compatible dataset found yet. Upload one on the Dataset page or the backend will reject the job.
-                    </p>
+                    <div className="rounded-lg border border-dashed border-border bg-background/70 p-3">
+                      <StatusBadge tone="warning">No compatible dataset</StatusBadge>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        Upload a dataset that matches the selected model formats
+                        before enqueueing a run.
+                      </p>
+                    </div>
                   )}
                 </div>
               </CardContent>
             </Card>
-          </div>
+          </aside>
 
-          <div className="space-y-6">
+          <div className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -333,7 +441,7 @@ export default function ConfigPage() {
                 </CardTitle>
                 <CardDescription>{selectedTask.description}</CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <CardContent className="grid gap-3 md:grid-cols-2">
                 {selectedTask.models.map((model) => {
                   const active = model.id === selectedModel.id;
                   return (
@@ -342,18 +450,30 @@ export default function ConfigPage() {
                       onClick={() => handleModelChange(model.id)}
                       className={`rounded-lg border p-4 text-left transition-colors ${
                         active
-                          ? "border-gray-900 bg-gray-50 dark:border-white dark:bg-gray-900"
-                          : "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-border bg-background/70 hover:bg-accent"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-semibold text-gray-900 dark:text-white">{model.label}</p>
-                          <p className="mt-1 text-xs text-gray-500">{model.runtime}</p>
+                          <p className="font-semibold">{model.label}</p>
+                          <p
+                            className={`mt-1 text-xs ${
+                              active ? "text-background/70" : "text-muted-foreground"
+                            }`}
+                          >
+                            {model.runtime}
+                          </p>
                         </div>
-                        {active && <CheckCircle className="h-5 w-5 text-green-500" />}
+                        {active && <CheckCircle className="h-5 w-5 shrink-0" />}
                       </div>
-                      <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">{model.reason}</p>
+                      <p
+                        className={`mt-3 text-sm leading-6 ${
+                          active ? "text-background/80" : "text-muted-foreground"
+                        }`}
+                      >
+                        {model.reason}
+                      </p>
                     </button>
                   );
                 })}
@@ -363,12 +483,19 @@ export default function ConfigPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Run Settings</CardTitle>
-                <CardDescription>Shared parameters sent to every trainer.</CardDescription>
+                <CardDescription>
+                  Shared values sent to every trainer in the training payload.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+              <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-2">
                   <Label>Project name</Label>
-                  <Input value={config.projectName} onChange={(event) => updateConfig("projectName", event.target.value)} />
+                  <Input
+                    value={config.projectName}
+                    onChange={(event) =>
+                      updateConfig("projectName", event.target.value)
+                    }
+                  />
                 </div>
                 {commonSpecs.map((spec) => (
                   <ParamInput
@@ -385,10 +512,10 @@ export default function ConfigPage() {
               <CardHeader>
                 <CardTitle>{selectedModel.label} Parameters</CardTitle>
                 <CardDescription>
-                  These values are passed in `params` to `/api/train` for the selected trainer.
+                  Model-specific options are passed in `params` to `/api/train`.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+              <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                 {modelSpecs.map((spec) => (
                   <ParamInput
                     key={spec.key}
