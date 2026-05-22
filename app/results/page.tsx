@@ -1,6 +1,8 @@
 "use client";
 
 import { MainLayout } from "@/components/MainLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -8,8 +10,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Download, FileText, RefreshCw, Trophy } from "lucide-react";
+import { EmptyState } from "@/components/workspace/empty-state";
+import { PageHeader } from "@/components/workspace/page-header";
+import { StatusBadge } from "@/components/workspace/status-badge";
+import { Download, FileText, History, RefreshCw, Trophy } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -47,16 +51,32 @@ export default function ResultsPage() {
   const [runs, setRuns] = useState<TrainingRun[]>([]);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const fetchRuns = useCallback(async () => {
     setIsLoading(true);
+
     try {
       const response = await fetch(`${API_URL}/api/runs`);
-      const data = response.ok ? await response.json() : { runs: [] };
-      setRuns(data.runs ?? []);
-      setSelectedProject((current) => current ?? data.runs?.[0]?.project_name ?? null);
-    } catch (error) {
-      console.error("Failed to fetch runs:", error);
+      if (!response.ok) {
+        throw new Error(`Run service returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      const nextRuns = data.runs ?? [];
+      setLoadError("");
+      setRuns(nextRuns);
+      setSelectedProject((current) =>
+        nextRuns.some((run: TrainingRun) => run.project_name === current)
+          ? current
+          : nextRuns[0]?.project_name ?? null,
+      );
+    } catch {
+      setRuns([]);
+      setSelectedProject(null);
+      setLoadError(
+        "Run history unavailable. Start the backend and refresh results.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -72,45 +92,56 @@ export default function ResultsPage() {
   );
 
   const downloadableFiles = selectedRun?.files?.filter((file) =>
-    ["pt", "pth", "csv", "log", "json", "traineddata"].some((extension) => file.name.endsWith(`.${extension}`)),
+    ["pt", "pth", "csv", "log", "json", "traineddata"].some((extension) =>
+      file.name.endsWith(`.${extension}`),
+    ),
   );
 
   return (
     <MainLayout>
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">Results</h1>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              Browse completed run folders, metrics, and downloadable artifacts from the backend.
-            </p>
-          </div>
-          <Button variant="outline" onClick={fetchRuns} disabled={isLoading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-        </div>
+        <PageHeader
+          eyebrow="Workspace"
+          title="Results"
+          description="Browse completed run folders, inspect the latest metrics, and collect the artifacts written by the backend."
+          actions={
+            <Button variant="outline" onClick={fetchRuns} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          }
+        />
 
         {isLoading ? (
-          <Card>
-            <CardContent className="flex items-center justify-center py-16 text-gray-500">
-              <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
-              Loading runs...
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={RefreshCw}
+            title="Loading run history"
+            description="Reading backend run folders and the latest metric snapshots."
+          />
+        ) : loadError ? (
+          <EmptyState
+            icon={History}
+            title="Results service offline"
+            description={loadError}
+            actions={
+              <Button variant="outline" onClick={fetchRuns}>
+                <RefreshCw className="h-4 w-4" />
+                Refresh Results
+              </Button>
+            }
+          />
         ) : runs.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-              <Trophy className="h-12 w-12 text-gray-300 dark:text-gray-700" />
-              <p className="mt-4 text-gray-500">No training results yet.</p>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={Trophy}
+            title="No training results yet"
+            description="Completed training runs will appear here with metrics and downloadable artifacts."
+          />
         ) : (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
             <Card>
               <CardHeader>
-                <CardTitle>Runs</CardTitle>
-                <CardDescription>{runs.length} run folders</CardDescription>
+                <CardTitle>Run History</CardTitle>
+                <CardDescription>{runs.length} backend run folders</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {runs.map((run) => (
@@ -119,13 +150,21 @@ export default function ResultsPage() {
                     onClick={() => setSelectedProject(run.project_name)}
                     className={`w-full rounded-lg border p-4 text-left transition-colors ${
                       selectedRun?.project_name === run.project_name
-                        ? "border-gray-900 bg-gray-50 dark:border-white dark:bg-gray-900"
-                        : "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+                        ? "border-foreground bg-muted"
+                        : "border-border bg-background hover:bg-muted"
                     }`}
                   >
-                    <p className="font-medium text-gray-900 dark:text-white">{run.project_name}</p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {run.model_type ?? "unknown"} · {formatDate(run.updatedAt)}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="min-w-0 break-words font-medium text-foreground">
+                        {run.project_name}
+                      </p>
+                      {selectedRun?.project_name === run.project_name && (
+                        <StatusBadge tone="success">Selected</StatusBadge>
+                      )}
+                    </div>
+                    <p className="mt-2 break-words text-xs text-muted-foreground">
+                      {run.model_type ?? "unknown model"} | Updated{" "}
+                      {formatDate(run.updatedAt)}
                     </p>
                   </button>
                 ))}
@@ -136,11 +175,22 @@ export default function ResultsPage() {
               <div className="space-y-6">
                 <Card>
                   <CardHeader>
-                    <CardTitle>{selectedRun.project_name}</CardTitle>
-                    <CardDescription>
-                      {selectedRun.task_type ?? "task"} · {selectedRun.model_type ?? "model"} ·{" "}
-                      {selectedRun.dataset_name ?? "dataset not recorded"}
-                    </CardDescription>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <CardTitle>{selectedRun.project_name}</CardTitle>
+                        <CardDescription className="mt-2">
+                          {selectedRun.dataset_name ?? "Dataset not recorded"}
+                        </CardDescription>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedRun.task_type && (
+                          <Badge variant="outline">{selectedRun.task_type}</Badge>
+                        )}
+                        {selectedRun.model_type && (
+                          <Badge variant="outline">{selectedRun.model_type}</Badge>
+                        )}
+                      </div>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -150,9 +200,14 @@ export default function ResultsPage() {
                         ["Created", formatDate(selectedRun.createdAt)],
                         ["Updated", formatDate(selectedRun.updatedAt)],
                       ].map(([label, value]) => (
-                        <div key={label} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
-                          <p className="text-xs text-gray-500">{label}</p>
-                          <p className="mt-1 break-words text-sm font-medium text-gray-900 dark:text-white">{String(value)}</p>
+                        <div
+                          key={label}
+                          className="rounded-lg border border-border bg-background p-3"
+                        >
+                          <p className="text-xs text-muted-foreground">{label}</p>
+                          <p className="mt-1 break-words text-sm font-medium text-foreground">
+                            {String(value)}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -162,20 +217,33 @@ export default function ResultsPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Latest Metrics</CardTitle>
-                    <CardDescription>Last row from `results.csv`, when available.</CardDescription>
+                    <CardDescription>
+                      Last row from `results.csv`, when available.
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     {selectedRun.latest_metrics ? (
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                        {Object.entries(selectedRun.latest_metrics).slice(0, 12).map(([key, value]) => (
-                          <div key={key} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
-                            <p className="text-xs text-gray-500">{key}</p>
-                            <p className="mt-1 break-words text-sm font-medium text-gray-900 dark:text-white">{value || "-"}</p>
-                          </div>
-                        ))}
+                        {Object.entries(selectedRun.latest_metrics)
+                          .slice(0, 12)
+                          .map(([key, value]) => (
+                            <div
+                              key={key}
+                              className="rounded-lg border border-border bg-background p-3"
+                            >
+                              <p className="break-words text-xs text-muted-foreground">
+                                {key}
+                              </p>
+                              <p className="mt-1 break-words text-sm font-medium text-foreground">
+                                {value || "-"}
+                              </p>
+                            </div>
+                          ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-gray-500">No metrics file found.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No metrics file found.
+                      </p>
                     )}
                   </CardContent>
                 </Card>
@@ -186,7 +254,9 @@ export default function ResultsPage() {
                       <Download className="h-5 w-5" />
                       Artifacts
                     </CardTitle>
-                    <CardDescription>Files under `backend/runs/{selectedRun.project_name}`.</CardDescription>
+                    <CardDescription>
+                      Files under `backend/runs/{selectedRun.project_name}`.
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -194,21 +264,29 @@ export default function ResultsPage() {
                         <a
                           key={file.path}
                           href={`${API_URL}/api/runs/${encodeURIComponent(selectedRun.project_name)}/files/${file.path}`}
-                          className="rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+                          className="rounded-lg border border-border bg-background p-4 transition-colors hover:bg-muted"
                         >
                           <div className="flex items-center justify-between gap-4">
                             <div className="flex min-w-0 items-center gap-3">
-                              <FileText className="h-5 w-5 shrink-0 text-gray-500" />
+                              <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{file.path}</p>
-                                <p className="text-xs text-gray-500">{formatBytes(file.size)}</p>
+                                <p className="truncate text-sm font-medium text-foreground">
+                                  {file.path}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {formatBytes(file.size)}
+                                </p>
                               </div>
                             </div>
-                            <Download className="h-4 w-4 shrink-0 text-gray-400" />
+                            <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
                           </div>
                         </a>
                       ))}
-                      {downloadableFiles?.length === 0 && <p className="text-sm text-gray-500">No downloadable artifacts found.</p>}
+                      {downloadableFiles?.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          No downloadable artifacts found.
+                        </p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

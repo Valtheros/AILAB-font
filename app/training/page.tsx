@@ -1,6 +1,7 @@
 "use client";
 
 import { MainLayout } from "@/components/MainLayout";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,10 +11,17 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { PageHeader } from "@/components/workspace/page-header";
+import {
+  StatusBadge,
+  type StatusTone,
+} from "@/components/workspace/status-badge";
 import {
   Activity,
   ChevronDown,
   ChevronUp,
+  CircleGauge,
+  Cpu,
   Play,
   Settings,
   Square,
@@ -38,6 +46,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type MetricRow = Record<string, string | number>;
 
+const metricStrokes = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
+
 function numericValue(row: MetricRow | undefined, key: string) {
   if (!row) return undefined;
   const value = row[key];
@@ -56,6 +72,13 @@ function displayMetric(value: string | number | undefined) {
   return String(value);
 }
 
+function statusTone(value: string): StatusTone {
+  if (["running", "exited"].includes(value)) return "success";
+  if (["queued", "stopped"].includes(value)) return "warning";
+  if (value === "failed") return "danger";
+  return "neutral";
+}
+
 export default function TrainingPage() {
   const { config } = useTrainingConfig();
   const [isTraining, setIsTraining] = useState(false);
@@ -69,32 +92,51 @@ export default function TrainingPage() {
   const logContainerRef = useRef<HTMLDivElement>(null);
 
   const selectedTask = getTask(fallbackCatalog, config.taskType);
-  const selectedModel = getModel(fallbackCatalog, config.taskType, config.modelType);
+  const selectedModel = getModel(
+    fallbackCatalog,
+    config.taskType,
+    config.modelType,
+  );
 
   const effectiveModelName = useMemo(() => {
     if (config.modelType === "yolo") {
-      const size = String(config.params.model_size ?? "n").replace("yolo11", "").replace(".pt", "");
+      const size = String(config.params.model_size ?? "n")
+        .replace("yolo11", "")
+        .replace(".pt", "");
       return `yolo11${size}`;
     }
+
     const architecture = config.params.architecture;
-    if (typeof architecture === "string" && (config.modelType === "resnet" || config.modelType === "efficientnet")) {
+    if (
+      typeof architecture === "string" &&
+      (config.modelType === "resnet" || config.modelType === "efficientnet")
+    ) {
       return architecture;
     }
+
     return config.modelName || selectedModel.model_name;
   }, [config.modelName, config.modelType, config.params, selectedModel.model_name]);
 
   const latestMetrics = metricsHistory[metricsHistory.length - 1];
   const epoch = numericValue(latestMetrics, "epoch") ?? 0;
   const totalEpochs = config.epochs;
-  const progressPercent = totalEpochs > 0 ? Math.min((epoch / totalEpochs) * 100, 100) : 0;
+  const progressPercent =
+    totalEpochs > 0 ? Math.min((epoch / totalEpochs) * 100, 100) : 0;
 
   const metricKeys = useMemo(() => {
     if (!latestMetrics) return [];
-    return Object.keys(latestMetrics).filter((key) => key !== "epoch" && numericValue(latestMetrics, key) !== undefined);
+    return Object.keys(latestMetrics).filter(
+      (key) => key !== "epoch" && numericValue(latestMetrics, key) !== undefined,
+    );
   }, [latestMetrics]);
 
   const chartKeys = metricKeys.filter(
-    (key) => key.includes("loss") || key.includes("accuracy") || key.includes("mAP") || key.includes("precision") || key.includes("recall"),
+    (key) =>
+      key.includes("loss") ||
+      key.includes("accuracy") ||
+      key.includes("mAP") ||
+      key.includes("precision") ||
+      key.includes("recall"),
   );
 
   const summaryItems = [
@@ -108,7 +150,10 @@ export default function TrainingPage() {
     { label: "AMP", value: config.amp ? "On" : "Off" },
   ];
 
-  const detailItems = Object.entries(config.params).map(([key, value]) => ({ label: key, value }));
+  const detailItems = Object.entries(config.params).map(([key, value]) => ({
+    label: key,
+    value,
+  }));
 
   const startTraining = async () => {
     const generatedProjectName = `${config.projectName || config.modelType}_${Date.now()}`;
@@ -151,24 +196,33 @@ export default function TrainingPage() {
 
       const data = await response.json();
       setJobId(data.job_id ?? data.container_id);
-      setLogs((prev) => `${prev}Job queued: ${data.job_id ?? data.container_id}\n`);
+      setLogs((previous) => `${previous}Job queued: ${data.job_id ?? data.container_id}\n`);
     } catch (error) {
       setIsTraining(false);
       setStatus("failed");
-      setLogs((prev) => `${prev}Error: ${error instanceof Error ? error.message : String(error)}\n`);
+      setLogs(
+        (previous) =>
+          `${previous}Error: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
     }
   };
 
   const stopTraining = async () => {
     if (!jobId) return;
+
     try {
-      const response = await fetch(`${API_URL}/api/stop/${jobId}`, { method: "POST" });
+      const response = await fetch(`${API_URL}/api/stop/${jobId}`, {
+        method: "POST",
+      });
       if (!response.ok) throw new Error("Failed to stop training");
       setIsTraining(false);
       setStatus("stopped");
-      setLogs((prev) => `${prev}\nStop requested.\n`);
+      setLogs((previous) => `${previous}\nStop requested.\n`);
     } catch (error) {
-      setLogs((prev) => `${prev}\nStop error: ${error instanceof Error ? error.message : String(error)}\n`);
+      setLogs(
+        (previous) =>
+          `${previous}\nStop error: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
     }
   };
 
@@ -177,24 +231,29 @@ export default function TrainingPage() {
 
     const interval = setInterval(async () => {
       try {
-        const statusRes = await fetch(`${API_URL}/api/status/${jobId}`);
-        const statusData = await statusRes.json();
+        const statusResponse = await fetch(`${API_URL}/api/status/${jobId}`);
+        const statusData = await statusResponse.json();
         setStatus(statusData.status);
         if (["exited", "failed", "stopped"].includes(statusData.status)) {
           setIsTraining(false);
         }
 
-        const logsRes = await fetch(`${API_URL}/api/logs/${jobId}`);
-        const logsData = await logsRes.json();
+        const logsResponse = await fetch(`${API_URL}/api/logs/${jobId}`);
+        const logsData = await logsResponse.json();
         setLogs(logsData.logs || "");
         if (logContainerRef.current) {
           logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
         }
 
         if (projectName) {
-          const metricsRes = await fetch(`${API_URL}/api/metrics/${projectName}`);
-          const metricsData = await metricsRes.json();
-          if (metricsData.status === "success" && Array.isArray(metricsData.metrics)) {
+          const metricsResponse = await fetch(
+            `${API_URL}/api/metrics/${projectName}`,
+          );
+          const metricsData = await metricsResponse.json();
+          if (
+            metricsData.status === "success" &&
+            Array.isArray(metricsData.metrics)
+          ) {
             setMetricsHistory(metricsData.metrics);
           }
         }
@@ -209,68 +268,90 @@ export default function TrainingPage() {
   return (
     <MainLayout>
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">Training</h1>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              Review the selected computer vision job, start it, and monitor logs and metrics.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {!isTraining && (
-              <Link href="/config">
-                <Button variant="outline" size="sm">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Edit Config
+        <PageHeader
+          eyebrow="Workspace"
+          title="Training Monitor"
+          description="Review the queued payload, start a CV training run, and watch metrics and worker logs without leaving the workspace."
+          actions={
+            <>
+              {!isTraining && (
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/config">
+                    <Settings className="h-4 w-4" />
+                    Edit Config
+                  </Link>
                 </Button>
-              </Link>
-            )}
-            {isTraining && (
-              <Button variant="destructive" onClick={stopTraining}>
-                <Square className="mr-2 h-4 w-4" />
-                Stop
-              </Button>
-            )}
-          </div>
-        </div>
+              )}
+              {isTraining && (
+                <Button variant="destructive" onClick={stopTraining}>
+                  <Square className="h-4 w-4" />
+                  Stop Run
+                </Button>
+              )}
+            </>
+          }
+        />
 
         {!isTraining && status !== "running" && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
-                Training Configuration
-              </CardTitle>
-              <CardDescription>Payload is compatible with the new `/api/train` contract.</CardDescription>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Cpu className="h-5 w-5" />
+                    Run Payload
+                  </CardTitle>
+                  <CardDescription className="mt-2">
+                    The draft below is sent through the current `/api/train` contract.
+                  </CardDescription>
+                </div>
+                <StatusBadge tone="neutral">Draft ready</StatusBadge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {summaryItems.map((item) => (
-                  <div key={item.label} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
-                    <p className="text-xs text-gray-500">{item.label}</p>
-                    <p className="mt-1 break-words text-sm font-semibold text-gray-900 dark:text-white">{String(item.value)}</p>
+                  <div
+                    key={item.label}
+                    className="rounded-lg border border-border bg-background p-3"
+                  >
+                    <p className="text-xs text-muted-foreground">{item.label}</p>
+                    <p className="mt-1 break-words text-sm font-semibold text-foreground">
+                      {String(item.value)}
+                    </p>
                   </div>
                 ))}
               </div>
               <button
                 onClick={() => setShowConfigSummary(!showConfigSummary)}
-                className="flex w-full items-center justify-center gap-1 rounded-lg py-2 text-sm text-gray-500 transition-colors hover:bg-gray-100 dark:hover:bg-gray-900"
+                className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-border py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
               >
-                {showConfigSummary ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                {showConfigSummary ? "Hide parameters" : `Show parameters (${detailItems.length})`}
+                {showConfigSummary ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+                {showConfigSummary
+                  ? "Hide parameters"
+                  : `Show parameters (${detailItems.length})`}
               </button>
               {showConfigSummary && (
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                   {detailItems.map((item) => (
-                    <div key={item.label} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
-                      <p className="text-xs text-gray-500">{item.label}</p>
-                      <p className="mt-1 break-words text-sm text-gray-900 dark:text-white">{String(item.value)}</p>
+                    <div
+                      key={item.label}
+                      className="rounded-lg border border-border bg-background p-3"
+                    >
+                      <p className="text-xs text-muted-foreground">{item.label}</p>
+                      <p className="mt-1 break-words text-sm text-foreground">
+                        {String(item.value)}
+                      </p>
                     </div>
                   ))}
                 </div>
               )}
               <Button onClick={startTraining}>
-                <Play className="mr-2 h-4 w-4" />
+                <Play className="h-4 w-4" />
                 Start Training
               </Button>
             </CardContent>
@@ -278,61 +359,102 @@ export default function TrainingPage() {
         )}
 
         {(isTraining || jobId) && (
-          <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-black sm:flex-row sm:items-center">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-900">
-              <Activity className={`h-5 w-5 ${isTraining ? "animate-spin text-green-500" : "text-gray-500"}`} />
+          <div className="console-surface flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-md border border-border bg-background">
+              <Activity
+                className={`h-5 w-5 ${isTraining ? "animate-pulse" : "text-muted-foreground"}`}
+              />
             </div>
-            <div className="flex-1">
-              <p className="font-medium text-gray-900 dark:text-white">
-                {selectedModel.label} · {projectName}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="break-words font-medium text-foreground">
+                  {selectedModel.label}
+                </p>
+                <StatusBadge tone={statusTone(status)}>{status}</StatusBadge>
+              </div>
+              <p className="mt-1 break-words text-sm text-muted-foreground">
+                Project: {projectName ?? "-"} | Job: {jobId ?? "-"}
               </p>
-              <p className="text-sm text-gray-500">Status: {status} · Job: {jobId ?? "-"}</p>
             </div>
             <div className="text-left sm:text-right">
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              <p className="text-2xl font-semibold text-foreground">
                 {Math.round(epoch)}/{totalEpochs}
               </p>
-              <p className="text-sm text-gray-500">epochs</p>
+              <p className="text-sm text-muted-foreground">epochs</p>
             </div>
           </div>
         )}
 
         {(isTraining || metricsHistory.length > 0) && (
           <>
-            <Card>
-              <CardHeader>
-                <CardTitle>Progress</CardTitle>
-                <CardDescription>{progressPercent.toFixed(1)}% complete</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Progress value={progressPercent} className="h-3" />
-              </CardContent>
-            </Card>
+            <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <CardTitle>Progress</CardTitle>
+                      <CardDescription>
+                        {progressPercent.toFixed(1)}% complete
+                      </CardDescription>
+                    </div>
+                    <Badge variant="outline">Epoch {Math.round(epoch)}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Progress value={progressPercent} className="h-3" />
+                </CardContent>
+              </Card>
 
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              {(metricKeys.length ? metricKeys.slice(0, 8) : ["train/loss", "val/loss", "val/accuracy", "lr"]).map((key) => (
-                <Card key={key}>
-                  <CardContent className="pt-6">
-                    <p className="text-sm text-gray-500">{key}</p>
-                    <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
-                      {displayMetric(latestMetrics?.[key])}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CircleGauge className="h-5 w-5" />
+                    Latest Metrics
+                  </CardTitle>
+                  <CardDescription>
+                    Numeric values from the newest trainer metric row.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  {(metricKeys.length
+                    ? metricKeys.slice(0, 8)
+                    : ["train/loss", "val/loss", "val/accuracy", "lr"]
+                  ).map((key) => (
+                    <div
+                      key={key}
+                      className="rounded-lg border border-border bg-background p-3"
+                    >
+                      <p className="break-words text-xs text-muted-foreground">
+                        {key}
+                      </p>
+                      <p className="mt-2 break-words text-xl font-semibold text-foreground">
+                        {displayMetric(latestMetrics?.[key])}
+                      </p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
             </div>
 
             {metricsHistory.length > 0 && chartKeys.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle>Metrics</CardTitle>
-                  <CardDescription>Generic chart for numeric trainer metrics.</CardDescription>
+                  <CardDescription>
+                    Generic chart for numeric trainer metrics.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[320px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={metricsHistory} margin={{ top: 5, right: 24, left: 0, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
+                      <LineChart
+                        data={metricsHistory}
+                        margin={{ top: 5, right: 24, left: 0, bottom: 5 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          className="stroke-border"
+                        />
                         <XAxis dataKey="epoch" />
                         <YAxis />
                         <Tooltip />
@@ -343,7 +465,7 @@ export default function TrainingPage() {
                             type="monotone"
                             dataKey={key}
                             name={key}
-                            stroke={["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#ea580c", "#0891b2"][index]}
+                            stroke={metricStrokes[index % metricStrokes.length]}
                             strokeWidth={2}
                             dot={false}
                           />
@@ -357,12 +479,10 @@ export default function TrainingPage() {
           </>
         )}
 
-        <div>
-          <Button variant="outline" onClick={() => setShowLogs(!showLogs)}>
-            <Terminal className="mr-2 h-4 w-4" />
-            {showLogs ? "Hide Logs" : "Show Logs"}
-          </Button>
-        </div>
+        <Button variant="outline" onClick={() => setShowLogs(!showLogs)}>
+          <Terminal className="h-4 w-4" />
+          {showLogs ? "Hide Logs" : "Show Logs"}
+        </Button>
 
         {showLogs && (
           <Card>
@@ -375,9 +495,13 @@ export default function TrainingPage() {
             <CardContent>
               <div
                 ref={logContainerRef}
-                className="h-[460px] w-full overflow-y-auto rounded-lg bg-gray-950 p-5 font-mono text-sm leading-relaxed text-green-400"
+                className="h-[460px] w-full overflow-y-auto rounded-lg border border-border bg-zinc-950 p-5 font-mono text-sm leading-relaxed text-zinc-100"
               >
-                {logs ? <pre className="whitespace-pre-wrap">{logs}</pre> : "No logs yet."}
+                {logs ? (
+                  <pre className="whitespace-pre-wrap">{logs}</pre>
+                ) : (
+                  "No logs yet."
+                )}
               </div>
             </CardContent>
           </Card>
