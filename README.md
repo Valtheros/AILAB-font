@@ -1,37 +1,187 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Computer Vision Training Frontend
 
-## Getting Started
+Next.js frontend for the no-code Computer Vision training platform.
 
-First, run the development server:
+The UI lets a user:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Upload and inspect datasets.
+- Select a Computer Vision task and model family.
+- Edit model-specific training parameters.
+- Submit training jobs to the FastAPI backend.
+- Monitor status, logs, and metrics.
+- Browse run artifacts and download results.
+
+## Supported workflows
+
+| Task | Models exposed in the UI |
+| --- | --- |
+| Image Classification | ResNet, EfficientNet |
+| Semantic / Instance Segmentation | DeepLabV3+, Mask R-CNN |
+| OCR / Document Vision | PaddleOCR, Tesseract |
+| Object Detection | YOLOv11, Faster R-CNN |
+
+The frontend requests the backend catalog from:
+
+```text
+GET /api/model-catalog
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`lib/cvCatalog.ts` is the client fallback catalog when that API is not reachable during configuration rendering.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Pages
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```text
+app/
+|-- dashboard/page.tsx    # Navigation overview
+|-- dataset/page.tsx      # Upload, list, delete, and inspect dataset formats
+|-- config/page.tsx       # Task, model, dataset, and parameter configuration
+|-- training/page.tsx     # Training submission and live monitoring
+`-- results/page.tsx      # Runs, latest metrics, and artifact downloads
+```
 
-## Learn More
+Important shared files:
 
-To learn more about Next.js, take a look at the following resources:
+```text
+components/
+|-- MainLayout.tsx
+|-- Navbar.tsx
+`-- Sidebar.tsx
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+lib/
+|-- cvCatalog.ts          # Catalog types and fallback task/model specs
+|-- useTrainingConfig.ts  # Persisted Zustand draft training config
+`-- utils.ts
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## State and data flow
 
-## Deploy on Vercel
+`Zustand` is used for the user's draft training configuration across pages:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Selected task.
+- Selected model.
+- Selected dataset.
+- Project name.
+- Shared training settings.
+- Model-specific parameter values.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# ModelTrain
+Backend data stays API-driven:
+
+- Dataset list from `/api/datasets`.
+- Model catalog from `/api/model-catalog`.
+- Job status from `/api/status/{job_id}`.
+- Logs from `/api/logs/{job_id}`.
+- Metrics from `/api/metrics/{project_name}`.
+- Run artifacts from `/api/runs`.
+
+This keeps draft UI state separate from server state.
+
+## Backend connection
+
+The frontend reads:
+
+```text
+NEXT_PUBLIC_API_URL
+```
+
+Fallback value:
+
+```text
+http://localhost:8000
+```
+
+Example `.env`:
+
+```text
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+Start the backend before using dataset, training, or result pages. A browser `TypeError: Failed to fetch` usually means the backend URL is unreachable, the backend is not running, or the page was opened outside the Next.js dev server.
+
+## Development
+
+Install dependencies:
+
+```powershell
+npm.cmd install
+```
+
+Start the dev server:
+
+```powershell
+npm.cmd run dev
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+On Windows PowerShell, `npm.cmd` avoids execution policy issues that can block `npm.ps1`.
+
+## Training request flow
+
+The configuration page stores a draft in `useTrainingConfig.ts`. The training page converts it into the backend request:
+
+```json
+{
+  "task_type": "image_classification",
+  "model_type": "resnet",
+  "model_name": "resnet50",
+  "dataset_name": "flowers",
+  "project_name": "flowers_1760000000000",
+  "epochs": 50,
+  "batch_size": 16,
+  "params": {
+    "device": "0",
+    "workers": 4,
+    "amp": true,
+    "architecture": "resnet50",
+    "learning_rate": 0.001
+  }
+}
+```
+
+## Dataset page
+
+The dataset page accepts ZIP uploads and displays backend-detected metadata:
+
+- Number of images.
+- Class names when available.
+- Compatible task IDs.
+- Detected dataset format IDs.
+
+Examples of supported backend format IDs include:
+
+- `imagefolder`
+- `yolo_detection`
+- `semantic_masks`
+- `coco_instances`
+- `paddleocr_labels`
+- `tesseract_ground_truth`
+
+## Results page
+
+The results page reads backend run folders from `/api/runs` and exposes downloadable files such as:
+
+- Model weights.
+- Metrics CSV files.
+- Logs.
+- Job config JSON.
+- OCR result files.
+
+## Quality checks
+
+Lint:
+
+```powershell
+npm.cmd run lint
+```
+
+Production build:
+
+```powershell
+npm.cmd run build
+```
+
+The production build can need network access while `next/font/google` fetches Geist font metadata.
