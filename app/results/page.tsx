@@ -9,357 +9,213 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Download,
-  Upload,
-  FileText,
-  Image as ImageIcon,
-  CheckCircle2,
-  BarChart3,
-  Eye,
-  Play,
-} from "lucide-react";
-import { useState } from "react";
+import { Download, FileText, RefreshCw, Trophy } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-// Mock trained models
-const mockModels = [
-  {
-    id: "1",
-    name: "traffic_signs_v1",
-    dataset: "traffic_signs",
-    epochs: 100,
-    mAP50: 0.892,
-    mAP5095: 0.673,
-    precision: 0.912,
-    recall: 0.867,
-    size: "12.4 MB",
-    createdAt: "2024-12-19 14:30",
-    variant: "YOLOv11n",
-  },
-  {
-    id: "2",
-    name: "vehicles_detector_v2",
-    dataset: "vehicles",
-    epochs: 150,
-    mAP50: 0.934,
-    mAP5095: 0.721,
-    precision: 0.945,
-    recall: 0.889,
-    size: "24.8 MB",
-    createdAt: "2024-12-18 09:15",
-    variant: "YOLOv11s",
-  },
-];
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+interface RunFile {
+  path: string;
+  name: string;
+  size: number;
+}
+
+interface TrainingRun {
+  project_name: string;
+  createdAt: number;
+  updatedAt: number;
+  task_type?: string;
+  model_type?: string;
+  model_name?: string;
+  dataset_name?: string;
+  epochs?: number;
+  files: RunFile[];
+  latest_metrics?: Record<string, string>;
+}
+
+function formatBytes(size: number) {
+  if (size > 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  if (size > 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${size} B`;
+}
+
+function formatDate(timestamp: number) {
+  return new Date(timestamp * 1000).toLocaleString();
+}
 
 export default function ResultsPage() {
-  const [selectedModel, setSelectedModel] = useState(mockModels[0]);
-  const [testImage, setTestImage] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [runs, setRuns] = useState<TrainingRun[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setTestImage(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+  const fetchRuns = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/runs`);
+      const data = response.ok ? await response.json() : { runs: [] };
+      setRuns(data.runs ?? []);
+      setSelectedProject((current) => current ?? data.runs?.[0]?.project_name ?? null);
+    } catch (error) {
+      console.error("Failed to fetch runs:", error);
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, []);
 
-  const runInference = () => {
-    setIsProcessing(true);
-    // Simulate inference
-    setTimeout(() => {
-      setIsProcessing(false);
-      console.log("Inference complete");
-    }, 2000);
-  };
+  useEffect(() => {
+    fetchRuns();
+  }, [fetchRuns]);
+
+  const selectedRun = useMemo(
+    () => runs.find((run) => run.project_name === selectedProject) ?? runs[0],
+    [runs, selectedProject],
+  );
+
+  const downloadableFiles = selectedRun?.files?.filter((file) =>
+    ["pt", "pth", "csv", "log", "json", "traineddata"].some((extension) => file.name.endsWith(`.${extension}`)),
+  );
 
   return (
     <MainLayout>
-      <div className="space-y-8">
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Results
-          </h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            ดูผลลัพธ์และดาวน์โหลด Trained Models
-          </p>
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">Results</h1>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              Browse completed run folders, metrics, and downloadable artifacts from the backend.
+            </p>
+          </div>
+          <Button variant="outline" onClick={fetchRuns} disabled={isLoading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </div>
 
-        <Tabs defaultValue="models" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="models">Trained Models</TabsTrigger>
-            <TabsTrigger value="inference">Test Inference</TabsTrigger>
-          </TabsList>
+        {isLoading ? (
+          <Card>
+            <CardContent className="flex items-center justify-center py-16 text-gray-500">
+              <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
+              Loading runs...
+            </CardContent>
+          </Card>
+        ) : runs.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+              <Trophy className="h-12 w-12 text-gray-300 dark:text-gray-700" />
+              <p className="mt-4 text-gray-500">No training results yet.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle>Runs</CardTitle>
+                <CardDescription>{runs.length} run folders</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {runs.map((run) => (
+                  <button
+                    key={run.project_name}
+                    onClick={() => setSelectedProject(run.project_name)}
+                    className={`w-full rounded-lg border p-4 text-left transition-colors ${
+                      selectedRun?.project_name === run.project_name
+                        ? "border-gray-900 bg-gray-50 dark:border-white dark:bg-gray-900"
+                        : "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+                    }`}
+                  >
+                    <p className="font-medium text-gray-900 dark:text-white">{run.project_name}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {run.model_type ?? "unknown"} · {formatDate(run.updatedAt)}
+                    </p>
+                  </button>
+                ))}
+              </CardContent>
+            </Card>
 
-          {/* Models Tab */}
-          <TabsContent value="models">
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-              {/* Models List */}
-              <div className="lg:col-span-1">
+            {selectedRun && (
+              <div className="space-y-6">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Your Models</CardTitle>
+                    <CardTitle>{selectedRun.project_name}</CardTitle>
                     <CardDescription>
-                      {mockModels.length} models available
+                      {selectedRun.task_type ?? "task"} · {selectedRun.model_type ?? "model"} ·{" "}
+                      {selectedRun.dataset_name ?? "dataset not recorded"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
-                      {mockModels.map((model) => (
-                        <button
-                          key={model.id}
-                          onClick={() => setSelectedModel(model)}
-                          className={`w-full rounded-lg border p-4 text-left transition-all ${
-                            selectedModel.id === model.id
-                              ? "border-gray-900 bg-gray-50 dark:border-white dark:bg-gray-800"
-                              : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
-                              <CheckCircle2 className="h-5 w-5 text-green-500" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-gray-900 dark:text-white">
-                                {model.name}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {model.variant} • {model.size}
-                              </p>
-                            </div>
-                          </div>
-                        </button>
+                    <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                      {[
+                        ["Model", selectedRun.model_name ?? "-"],
+                        ["Epochs", selectedRun.epochs ?? "-"],
+                        ["Created", formatDate(selectedRun.createdAt)],
+                        ["Updated", formatDate(selectedRun.updatedAt)],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+                          <p className="text-xs text-gray-500">{label}</p>
+                          <p className="mt-1 break-words text-sm font-medium text-gray-900 dark:text-white">{String(value)}</p>
+                        </div>
                       ))}
                     </div>
                   </CardContent>
                 </Card>
-              </div>
 
-              {/* Model Details */}
-              <div className="lg:col-span-2 space-y-6">
                 <Card>
                   <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle>{selectedModel.name}</CardTitle>
-                        <CardDescription>
-                          Trained on {selectedModel.dataset} •{" "}
-                          {selectedModel.createdAt}
-                        </CardDescription>
-                      </div>
-                      <Button>
-                        <Download className="mr-2 h-4 w-4" />
-                        Download Model
-                      </Button>
-                    </div>
+                    <CardTitle>Latest Metrics</CardTitle>
+                    <CardDescription>Last row from `results.csv`, when available.</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                      <div className="rounded-lg border border-gray-200 p-4 text-center dark:border-gray-800">
-                        <p className="text-sm text-gray-500">mAP@50</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                          {(selectedModel.mAP50 * 100).toFixed(1)}%
-                        </p>
+                    {selectedRun.latest_metrics ? (
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                        {Object.entries(selectedRun.latest_metrics).slice(0, 12).map(([key, value]) => (
+                          <div key={key} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+                            <p className="text-xs text-gray-500">{key}</p>
+                            <p className="mt-1 break-words text-sm font-medium text-gray-900 dark:text-white">{value || "-"}</p>
+                          </div>
+                        ))}
                       </div>
-                      <div className="rounded-lg border border-gray-200 p-4 text-center dark:border-gray-800">
-                        <p className="text-sm text-gray-500">mAP@50-95</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                          {(selectedModel.mAP5095 * 100).toFixed(1)}%
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-gray-200 p-4 text-center dark:border-gray-800">
-                        <p className="text-sm text-gray-500">Precision</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                          {(selectedModel.precision * 100).toFixed(1)}%
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-gray-200 p-4 text-center dark:border-gray-800">
-                        <p className="text-sm text-gray-500">Recall</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                          {(selectedModel.recall * 100).toFixed(1)}%
-                        </p>
-                      </div>
-                    </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No metrics file found.</p>
+                    )}
                   </CardContent>
                 </Card>
 
-                {/* Model Info */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <FileText className="h-5 w-5" />
-                      Model Information
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <p className="text-sm text-gray-500">Model Variant</p>
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {selectedModel.variant}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm text-gray-500">Dataset</p>
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {selectedModel.dataset}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm text-gray-500">Epochs Trained</p>
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {selectedModel.epochs}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm text-gray-500">File Size</p>
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {selectedModel.size}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Download Options */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Download className="h-5 w-5" />
-                      Download Options
+                      Artifacts
                     </CardTitle>
+                    <CardDescription>Files under `backend/runs/{selectedRun.project_name}`.</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <Button
-                        variant="outline"
-                        className="h-auto flex-col gap-2 py-4"
-                      >
-                        <FileText className="h-6 w-6" />
-                        <span>best.pt</span>
-                        <span className="text-xs text-gray-500">
-                          Best weights
-                        </span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="h-auto flex-col gap-2 py-4"
-                      >
-                        <FileText className="h-6 w-6" />
-                        <span>last.pt</span>
-                        <span className="text-xs text-gray-500">
-                          Last epoch weights
-                        </span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="h-auto flex-col gap-2 py-4"
-                      >
-                        <BarChart3 className="h-6 w-6" />
-                        <span>results.csv</span>
-                        <span className="text-xs text-gray-500">
-                          Training metrics
-                        </span>
-                      </Button>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      {(downloadableFiles ?? []).map((file) => (
+                        <a
+                          key={file.path}
+                          href={`${API_URL}/api/runs/${encodeURIComponent(selectedRun.project_name)}/files/${file.path}`}
+                          className="rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+                        >
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <FileText className="h-5 w-5 shrink-0 text-gray-500" />
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{file.path}</p>
+                                <p className="text-xs text-gray-500">{formatBytes(file.size)}</p>
+                              </div>
+                            </div>
+                            <Download className="h-4 w-4 shrink-0 text-gray-400" />
+                          </div>
+                        </a>
+                      ))}
+                      {downloadableFiles?.length === 0 && <p className="text-sm text-gray-500">No downloadable artifacts found.</p>}
                     </div>
                   </CardContent>
                 </Card>
               </div>
-            </div>
-          </TabsContent>
-
-          {/* Inference Tab */}
-          <TabsContent value="inference">
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              {/* Upload Section */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Upload className="h-5 w-5" />
-                    Test Image
-                  </CardTitle>
-                  <CardDescription>
-                    อัพโหลดรูปภาพเพื่อทดสอบ Model
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <label className="block">
-                      <div className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 p-8 transition-colors hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600">
-                        {testImage ? (
-                          <img
-                            src={testImage}
-                            alt="Test"
-                            className="max-h-64 rounded-lg object-contain"
-                          />
-                        ) : (
-                          <>
-                            <ImageIcon className="mb-4 h-12 w-12 text-gray-400" />
-                            <p className="text-gray-600 dark:text-gray-400">
-                              คลิกเพื่อเลือกรูปภาพ
-                            </p>
-                            <p className="text-sm text-gray-400">
-                              JPG, PNG up to 10MB
-                            </p>
-                          </>
-                        )}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageUpload}
-                          className="hidden"
-                        />
-                      </div>
-                    </label>
-
-                    <Button
-                      className="w-full"
-                      disabled={!testImage || isProcessing}
-                      onClick={runInference}
-                    >
-                      {isProcessing ? (
-                        <>
-                          <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="mr-2 h-4 w-4" />
-                          Run Detection
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Results Section */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Eye className="h-5 w-5" />
-                    Detection Results
-                  </CardTitle>
-                  <CardDescription>ผลการตรวจจับ Objects</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col items-center justify-center rounded-xl border border-gray-200 p-12 text-center dark:border-gray-800">
-                    <ImageIcon className="mb-4 h-12 w-12 text-gray-300 dark:text-gray-700" />
-                    <p className="text-gray-500">
-                      อัพโหลดรูปภาพและกด Run Detection
-                    </p>
-                    <p className="text-sm text-gray-400">ผลลัพธ์จะแสดงที่นี่</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
+            )}
+          </div>
+        )}
       </div>
     </MainLayout>
   );
