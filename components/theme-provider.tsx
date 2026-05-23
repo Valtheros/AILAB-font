@@ -2,9 +2,24 @@
 
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 
-function ThemeProvider({ children }: { children: React.ReactNode }) {
+type ThemeName = "light" | "dark";
+
+function ThemeProvider({
+  children,
+  defaultTheme = "dark",
+}: {
+  children: React.ReactNode;
+  defaultTheme?: ThemeName;
+}) {
   return (
-    <NextThemesProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+    <NextThemesProvider
+      attribute="class"
+      defaultTheme={defaultTheme}
+      disableTransitionOnChange
+      enableColorScheme
+      enableSystem={false}
+      storageKey="theme"
+    >
       {children}
     </NextThemesProvider>
   );

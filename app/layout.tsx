@@ -1,17 +1,31 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
+
+type ThemeName = "light" | "dark";
+
+function resolveTheme(value: string | undefined): ThemeName {
+  return value === "light" ? "light" : "dark";
+}
 
 const themeBootstrapScript = `
 (() => {
   try {
+    const cookieTheme = document.cookie.match(/(?:^|; )theme=(light|dark)(?:;|$)/)?.[1];
     const storedTheme = localStorage.getItem("theme");
-    const theme = storedTheme === "light" ? "light" : "dark";
+    const theme = cookieTheme === "light" || cookieTheme === "dark"
+      ? cookieTheme
+      : storedTheme === "light"
+        ? "light"
+        : "dark";
     const root = document.documentElement;
 
     root.classList.remove("light", "dark");
     root.classList.add(theme);
     root.style.colorScheme = theme;
+    localStorage.setItem("theme", theme);
+    document.cookie = "theme=" + theme + "; Path=/; Max-Age=31536000; SameSite=Lax";
   } catch {
     document.documentElement.classList.add("dark");
     document.documentElement.style.colorScheme = "dark";
@@ -32,13 +46,21 @@ export const metadata: Metadata = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const initialTheme = resolveTheme(cookieStore.get("theme")?.value);
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      className={initialTheme}
+      lang="en"
+      style={{ colorScheme: initialTheme }}
+      suppressHydrationWarning
+    >
       <head>
         <script
           id="theme-bootstrap"
@@ -46,7 +68,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider defaultTheme={initialTheme}>{children}</ThemeProvider>
       </body>
     </html>
   );
