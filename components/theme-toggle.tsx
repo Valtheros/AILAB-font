@@ -27,11 +27,8 @@ function ThemeToggle({ className }: { className?: string }) {
       size="icon"
       variant="outline"
     >
-      {resolvedTheme === "dark" ? (
-        <Sun className="h-4 w-4" />
-      ) : (
-        <MoonStar className="h-4 w-4" />
-      )}
+      <Sun className="hidden h-4 w-4 dark:block" />
+      <MoonStar className="h-4 w-4 dark:hidden" />
     </Button>
   );
 }

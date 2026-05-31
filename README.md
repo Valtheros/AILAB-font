@@ -68,12 +68,22 @@ Backend data stays API-driven:
 
 - Dataset list from `/api/datasets`.
 - Model catalog from `/api/model-catalog`.
-- Job status from `/api/status/{job_id}`.
-- Logs from `/api/logs/{job_id}`.
-- Metrics from `/api/metrics/{project_name}`.
+- Backend availability badge from `GET /`.
+- Live job snapshots and incremental updates from `/api/jobs/{job_id}/events`.
+- Recovery snapshots from `/api/status/{job_id}`, `/api/logs/{job_id}`, and
+  `/api/metrics/{project_name}`.
 - Run artifacts from `/api/runs`.
 
 This keeps draft UI state separate from server state.
+
+The navbar and dashboard do not assume that a worker is ready. They probe the
+backend root endpoint and display `Checking backend`, `Backend online`, or
+`Backend offline`.
+
+The training monitor uses Server-Sent Events (SSE), not interval polling. The
+browser receives one snapshot when it connects or reconnects, then appends only
+new log text and applies changed status or metrics events. The active job ID is
+stored in `sessionStorage` so refreshing the monitor reconnects to the same run.
 
 ## Backend connection
 

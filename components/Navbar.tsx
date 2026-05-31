@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Cpu } from "lucide-react";
-import { StatusBadge } from "@/components/workspace/status-badge";
+import { BackendStatusBadge } from "@/components/workspace/backend-status-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 interface NavbarProps {
@@ -29,10 +29,7 @@ export function Navbar({ mobileMenuButton }: NavbarProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <StatusBadge tone="success">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Ready
-          </StatusBadge>
+          <BackendStatusBadge />
           <ThemeToggle />
         </div>
       </div>

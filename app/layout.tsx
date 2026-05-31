@@ -9,30 +9,6 @@ function resolveTheme(value: string | undefined): ThemeName {
   return value === "light" ? "light" : "dark";
 }
 
-const themeBootstrapScript = `
-(() => {
-  try {
-    const cookieTheme = document.cookie.match(/(?:^|; )theme=(light|dark)(?:;|$)/)?.[1];
-    const storedTheme = localStorage.getItem("theme");
-    const theme = cookieTheme === "light" || cookieTheme === "dark"
-      ? cookieTheme
-      : storedTheme === "light"
-        ? "light"
-        : "dark";
-    const root = document.documentElement;
-
-    root.classList.remove("light", "dark");
-    root.classList.add(theme);
-    root.style.colorScheme = theme;
-    localStorage.setItem("theme", theme);
-    document.cookie = "theme=" + theme + "; Path=/; Max-Age=31536000; SameSite=Lax";
-  } catch {
-    document.documentElement.classList.add("dark");
-    document.documentElement.style.colorScheme = "dark";
-  }
-})();
-`;
-
 export const metadata: Metadata = {
   title: "Train - AI Training Platform",
   description:
@@ -61,12 +37,6 @@ export default async function RootLayout({
       style={{ colorScheme: initialTheme }}
       suppressHydrationWarning
     >
-      <head>
-        <script
-          id="theme-bootstrap"
-          dangerouslySetInnerHTML={{ __html: themeBootstrapScript }}
-        />
-      </head>
       <body className="antialiased">
         <ThemeProvider defaultTheme={initialTheme}>{children}</ThemeProvider>
       </body>

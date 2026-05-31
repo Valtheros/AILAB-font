@@ -90,7 +90,7 @@ export default function HomePage() {
               <p className="font-mono text-xs text-zinc-400">
                 run/resnet_flowers_001
               </p>
-              <StatusBadge tone="success">Ready</StatusBadge>
+              <StatusBadge>Preview</StatusBadge>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-white/10 bg-white/[0.04] p-3">

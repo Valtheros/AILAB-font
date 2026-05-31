@@ -37,13 +37,23 @@ export const defaultConfig: TrainingConfig = {
 };
 
 function normalizeConfig(config?: Partial<TrainingConfig>): TrainingConfig {
+  const batchSize = Number(config?.batchSize ?? config?.params?.batch_size);
+  const normalizedBatchSize =
+    Number.isFinite(batchSize) && batchSize >= 1
+      ? batchSize
+      : defaultConfig.batchSize;
+  const params: Record<string, ConfigValue> = {
+    ...defaultConfig.params,
+    ...(config?.params ?? {}),
+    batch_size: normalizedBatchSize,
+  };
+  if (params.ocr_task === "e2e") params.ocr_task = "rec";
+
   return {
     ...defaultConfig,
     ...(config ?? {}),
-    params: {
-      ...defaultConfig.params,
-      ...(config?.params ?? {}),
-    },
+    batchSize: normalizedBatchSize,
+    params,
   };
 }
 

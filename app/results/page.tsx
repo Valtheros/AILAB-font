@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { Download, FileText, History, RefreshCw, Trophy } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { artifactDownloadUrl } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -263,7 +264,7 @@ export default function ResultsPage() {
                       {(downloadableFiles ?? []).map((file) => (
                         <a
                           key={file.path}
-                          href={`${API_URL}/api/runs/${encodeURIComponent(selectedRun.project_name)}/files/${file.path}`}
+                          href={artifactDownloadUrl(API_URL, selectedRun.project_name, file.path)}
                           className="rounded-lg border border-border bg-background p-4 transition-colors hover:bg-muted"
                         >
                           <div className="flex items-center justify-between gap-4">

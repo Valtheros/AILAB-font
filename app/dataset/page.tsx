@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { parseJsonText } from "@/lib/api";
 
 interface Dataset {
   id: string;
@@ -111,11 +112,18 @@ export default function DatasetPage() {
           }
         });
         xhr.addEventListener("load", () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(JSON.parse(xhr.responseText));
-          } else {
-            const data = JSON.parse(xhr.responseText || "{}");
-            reject(new Error(data.detail || `Upload failed with status ${xhr.status}`));
+          try {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(parseJsonText(xhr.responseText, "Upload returned an invalid response"));
+            } else {
+              const data = parseJsonText<{ detail?: string }>(
+                xhr.responseText || "{}",
+                `Upload failed with status ${xhr.status}`,
+              );
+              reject(new Error(data.detail || `Upload failed with status ${xhr.status}`));
+            }
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
           }
         });
         xhr.addEventListener("error", () => reject(new Error("Network error")));

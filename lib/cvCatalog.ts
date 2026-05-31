@@ -116,7 +116,7 @@ export const fallbackCatalog: CVCatalog = {
   version: "local-fallback",
   common_params: [
     numberParam("epochs", "Epochs", 50, 1, 2000, 1),
-    numberParam("batch_size", "Batch size", 16, -1, 256, 1),
+    numberParam("batch_size", "Batch size", 16, 1, 256, 1),
     selectParam("device", "Device", "0", [
       { value: "0", label: "GPU 0" },
       { value: "0,1", label: "GPU 0,1" },
@@ -196,6 +196,7 @@ export const fallbackCatalog: CVCatalog = {
             ]),
             numberParam("image_size", "Image size", 512, 128, 2048, 32),
             numberParam("num_classes", "Mask classes", 2, 1, 1000, 1),
+            numberParam("ignore_index", "Ignored mask value", 255, -1, 255, 1),
             numberParam("encoder_depth", "Encoder depth", 5, 3, 5, 1),
             selectParam("encoder_output_stride", "Output stride", "16", [
               { value: "8", label: "8" },
@@ -203,6 +204,10 @@ export const fallbackCatalog: CVCatalog = {
             ]),
             numberParam("decoder_channels", "Decoder channels", 256, 32, 1024, 32),
             textParam("decoder_atrous_rates", "Atrous rates", "12,24,36"),
+            selectParam("loss", "Loss", "cross_entropy", [
+              { value: "cross_entropy", label: "Cross entropy" },
+              { value: "dice", label: "Dice" },
+            ]),
             ...optimizerParams,
           ],
         },
@@ -237,7 +242,6 @@ export const fallbackCatalog: CVCatalog = {
             selectParam("ocr_task", "OCR task", "rec", [
               { value: "det", label: "Detection" },
               { value: "rec", label: "Recognition" },
-              { value: "e2e", label: "End-to-end" },
             ]),
             numberParam("learning_rate", "Learning rate", 0.001, 0.000001, 1, 0.0001),
             textParam("character_dict_path", "Character dictionary"),
@@ -274,7 +278,7 @@ export const fallbackCatalog: CVCatalog = {
           model_name: "yolo11n",
           runtime: "PyTorch / Ultralytics",
           reason: "Existing fast detector in this platform.",
-          dataset_formats: ["yolo_detection", "yolo_segmentation"],
+          dataset_formats: ["yolo_detection"],
           params: [
             selectParam("model_size", "Model size", "n", [
               { value: "n", label: "Nano" },

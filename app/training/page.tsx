@@ -39,10 +39,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fallbackCatalog, getModel, getTask } from "@/lib/cvCatalog";
+import { type CVCatalog, fallbackCatalog, getModel, getTask } from "@/lib/cvCatalog";
+import { projectSlug } from "@/lib/api";
 import { useTrainingConfig } from "@/lib/useTrainingConfig";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const ACTIVE_JOB_KEY = "vision-console-active-job";
 
 type MetricRow = Record<string, string | number>;
 
@@ -89,11 +91,13 @@ export default function TrainingPage() {
   const [showLogs, setShowLogs] = useState(false);
   const [showConfigSummary, setShowConfigSummary] = useState(false);
   const [metricsHistory, setMetricsHistory] = useState<MetricRow[]>([]);
+  const [catalog, setCatalog] = useState<CVCatalog>(fallbackCatalog);
+  const [streamError, setStreamError] = useState("");
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  const selectedTask = getTask(fallbackCatalog, config.taskType);
+  const selectedTask = getTask(catalog, config.taskType);
   const selectedModel = getModel(
-    fallbackCatalog,
+    catalog,
     config.taskType,
     config.modelType,
   );
@@ -156,7 +160,7 @@ export default function TrainingPage() {
   }));
 
   const startTraining = async () => {
-    const generatedProjectName = `${config.projectName || config.modelType}_${Date.now()}`;
+    const generatedProjectName = `${projectSlug(config.projectName || config.modelType)}_${Date.now()}`;
     setIsTraining(true);
     setStatus("queued");
     setLogs("Submitting training job...\n");
@@ -195,8 +199,14 @@ export default function TrainingPage() {
       }
 
       const data = await response.json();
-      setJobId(data.job_id ?? data.container_id);
-      setLogs((previous) => `${previous}Job queued: ${data.job_id ?? data.container_id}\n`);
+      const nextJobId = data.job_id ?? data.container_id;
+      if (!nextJobId) throw new Error("Backend did not return a job ID");
+      setJobId(nextJobId);
+      sessionStorage.setItem(
+        ACTIVE_JOB_KEY,
+        JSON.stringify({ jobId: nextJobId, projectName: generatedProjectName }),
+      );
+      setLogs((previous) => `${previous}Job queued: ${nextJobId}\n`);
     } catch (error) {
       setIsTraining(false);
       setStatus("failed");
@@ -227,43 +237,74 @@ export default function TrainingPage() {
   };
 
   useEffect(() => {
-    if (!jobId || ["exited", "failed", "stopped"].includes(status)) return;
+    try {
+      const saved = sessionStorage.getItem(ACTIVE_JOB_KEY);
+      if (!saved) return;
+      const active = JSON.parse(saved) as {
+        jobId?: string;
+        projectName?: string;
+      };
+      if (!active.jobId) return;
+      setJobId(active.jobId);
+      setProjectName(active.projectName ?? null);
+      setStatus("queued");
+      setIsTraining(true);
+    } catch {
+      sessionStorage.removeItem(ACTIVE_JOB_KEY);
+    }
+  }, []);
 
-    const interval = setInterval(async () => {
-      try {
-        const statusResponse = await fetch(`${API_URL}/api/status/${jobId}`);
-        const statusData = await statusResponse.json();
-        setStatus(statusData.status);
-        if (["exited", "failed", "stopped"].includes(statusData.status)) {
-          setIsTraining(false);
-        }
+  useEffect(() => {
+    fetch(`${API_URL}/api/model-catalog`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Catalog unavailable");
+        return response.json();
+      })
+      .then((data: CVCatalog) => setCatalog(data))
+      .catch(() => setCatalog(fallbackCatalog));
+  }, []);
 
-        const logsResponse = await fetch(`${API_URL}/api/logs/${jobId}`);
-        const logsData = await logsResponse.json();
-        setLogs(logsData.logs || "");
-        if (logContainerRef.current) {
-          logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-        }
+  useEffect(() => {
+    if (!jobId) return;
+    const source = new EventSource(`${API_URL}/api/jobs/${encodeURIComponent(jobId)}/events`);
+    const parse = <T,>(event: Event) => JSON.parse((event as MessageEvent<string>).data) as T;
 
-        if (projectName) {
-          const metricsResponse = await fetch(
-            `${API_URL}/api/metrics/${projectName}`,
-          );
-          const metricsData = await metricsResponse.json();
-          if (
-            metricsData.status === "success" &&
-            Array.isArray(metricsData.metrics)
-          ) {
-            setMetricsHistory(metricsData.metrics);
-          }
-        }
-      } catch (error) {
-        console.error("Polling error:", error);
-      }
-    }, 2500);
+    source.addEventListener("open", () => setStreamError(""));
+    source.addEventListener("snapshot", (event) => {
+      const data = parse<{ status: string; logs: string; metrics: MetricRow[] }>(event);
+      setStatus(data.status);
+      setLogs(data.logs || "");
+      setMetricsHistory(data.metrics || []);
+    });
+    source.addEventListener("log", (event) => {
+      const data = parse<{ text: string; replace?: boolean }>(event);
+      setLogs((previous) => (data.replace ? data.text : previous + data.text));
+    });
+    source.addEventListener("status", (event) => {
+      const data = parse<{ status: string }>(event);
+      setStatus(data.status);
+      if (["exited", "failed", "stopped"].includes(data.status)) setIsTraining(false);
+    });
+    source.addEventListener("metrics", (event) => {
+      const data = parse<{ metrics: MetricRow[] }>(event);
+      setMetricsHistory(data.metrics || []);
+    });
+    source.addEventListener("end", (event) => {
+      const data = parse<{ status: string }>(event);
+      setStatus(data.status);
+      setIsTraining(false);
+      sessionStorage.removeItem(ACTIVE_JOB_KEY);
+      source.close();
+    });
+    source.onerror = () => setStreamError("Live updates reconnecting...");
+    return () => source.close();
+  }, [jobId]);
 
-    return () => clearInterval(interval);
-  }, [jobId, projectName, status]);
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [logs]);
 
   return (
     <MainLayout>
@@ -371,6 +412,7 @@ export default function TrainingPage() {
                   {selectedModel.label}
                 </p>
                 <StatusBadge tone={statusTone(status)}>{status}</StatusBadge>
+                {streamError && <StatusBadge tone="warning">{streamError}</StatusBadge>}
               </div>
               <p className="mt-1 break-words text-sm text-muted-foreground">
                 Project: {projectName ?? "-"} | Job: {jobId ?? "-"}
