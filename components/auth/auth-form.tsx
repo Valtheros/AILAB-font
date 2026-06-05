@@ -125,7 +125,16 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
 
   function showAuthError(authError: AuthClientError | null | undefined) {
     const message = authError?.message || "Authentication failed.";
+    const lowerCode = authError?.code?.toLowerCase() ?? "";
     const lowerMessage = message.toLowerCase();
+
+    if (
+      lowerCode.includes("email_already_exists") ||
+      lowerCode.includes("user_already_exists")
+    ) {
+      setFieldError("email", message);
+      return;
+    }
 
     if (lowerMessage.includes("invalid email or password")) {
       setFieldError("password", message);
@@ -138,6 +147,9 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
     }
 
     if (
+      lowerCode.includes("email") ||
+      lowerCode.includes("user") ||
+      lowerCode.includes("account") ||
       lowerMessage.includes("email") ||
       lowerMessage.includes("user") ||
       lowerMessage.includes("account")
