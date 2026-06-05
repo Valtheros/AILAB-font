@@ -10,7 +10,7 @@ function resolveTheme(value: string | undefined): ThemeName {
 }
 
 export const metadata: Metadata = {
-  title: "Train - AI Training Platform",
+  title: "AILAB - AI Training Platform",
   description:
     "Train AI models easily with a visual interface. No coding required.",
   keywords: [

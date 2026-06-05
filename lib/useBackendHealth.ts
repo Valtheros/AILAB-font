@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiBaseUrl } from "@/lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_URL = apiBaseUrl();
 const REQUEST_TIMEOUT_MS = 3000;
 const POLL_INTERVAL_MS = 15000;
 

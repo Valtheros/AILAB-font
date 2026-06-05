@@ -40,11 +40,11 @@ import {
   YAxis,
 } from "recharts";
 import { type CVCatalog, fallbackCatalog, getModel, getTask } from "@/lib/cvCatalog";
-import { projectSlug } from "@/lib/api";
+import { apiBaseUrl, projectSlug } from "@/lib/api";
 import { useTrainingConfig } from "@/lib/useTrainingConfig";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const ACTIVE_JOB_KEY = "vision-console-active-job";
+const API_URL = apiBaseUrl();
+const ACTIVE_JOB_KEY = "ailab-active-job";
 
 type MetricRow = Record<string, string | number>;
 

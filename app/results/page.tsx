@@ -15,9 +15,9 @@ import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { Download, FileText, History, RefreshCw, Trophy } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { artifactDownloadUrl } from "@/lib/api";
+import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_URL = apiBaseUrl();
 
 interface RunFile {
   path: string;

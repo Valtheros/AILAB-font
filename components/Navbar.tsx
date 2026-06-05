@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Cpu } from "lucide-react";
+import { SessionMenu } from "@/components/auth/session-menu";
 import { BackendStatusBadge } from "@/components/workspace/backend-status-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -20,9 +21,9 @@ export function Navbar({ mobileMenuButton }: NavbarProps) {
               <Cpu className="h-4 w-4" />
             </div>
             <div className="hidden min-w-0 sm:block">
-              <p className="truncate text-sm font-semibold">Vision Console</p>
+              <p className="truncate text-sm font-semibold">AILAB</p>
               <p className="truncate text-xs text-muted-foreground">
-                CV training workspace
+                AI training workspace
               </p>
             </div>
           </Link>
@@ -30,6 +31,7 @@ export function Navbar({ mobileMenuButton }: NavbarProps) {
 
         <div className="flex items-center gap-2">
           <BackendStatusBadge />
+          <SessionMenu />
           <ThemeToggle />
         </div>
       </div>

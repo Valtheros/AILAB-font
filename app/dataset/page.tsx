@@ -28,7 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { parseJsonText } from "@/lib/api";
+import { apiBaseUrl, parseJsonText } from "@/lib/api";
 
 interface Dataset {
   id: string;
@@ -42,7 +42,7 @@ interface Dataset {
   warnings?: string[];
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_URL = apiBaseUrl();
 
 export default function DatasetPage() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);

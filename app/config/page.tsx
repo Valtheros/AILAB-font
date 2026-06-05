@@ -45,9 +45,10 @@ import {
   getModel,
   getTask,
 } from "@/lib/cvCatalog";
+import { apiBaseUrl } from "@/lib/api";
 import { ConfigValue, useTrainingConfig } from "@/lib/useTrainingConfig";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_URL = apiBaseUrl();
 
 interface Dataset {
   id: string;

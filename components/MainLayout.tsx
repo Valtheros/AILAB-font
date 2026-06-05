@@ -2,7 +2,8 @@
 
 import { Navbar } from "@/components/Navbar";
 import { Sidebar, MobileMenuButton } from "@/components/Sidebar";
-import { useState, useCallback } from "react";
+import { AuthGate } from "@/components/auth/auth-gate";
+import { Suspense, useState, useCallback } from "react";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -32,7 +33,9 @@ export function MainLayout({ children, showSidebar = true }: MainLayoutProps) {
         }`}
       >
         <div className="min-h-[calc(100vh-4rem)] p-4 md:p-6 xl:p-8">
-          {children}
+          <Suspense fallback={null}>
+            <AuthGate>{children}</AuthGate>
+          </Suspense>
         </div>
       </main>
     </div>

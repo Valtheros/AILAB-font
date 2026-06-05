@@ -6,6 +6,13 @@ export function parseJsonText<T>(text: string, fallbackMessage: string): T {
   }
 }
 
+export function apiBaseUrl() {
+  if (process.env.NEXT_PUBLIC_USE_API_PROXY === "false") {
+    return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  }
+  return "/api/backend";
+}
+
 export function artifactDownloadUrl(
   apiUrl: string,
   projectName: string,

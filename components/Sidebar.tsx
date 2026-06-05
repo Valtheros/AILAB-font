@@ -9,6 +9,7 @@ import {
   Play,
   Download,
   Menu,
+  UserRound,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,11 @@ const navItems = [
     title: "Results",
     href: "/results",
     icon: Download,
+  },
+  {
+    title: "Account",
+    href: "/account",
+    icon: UserRound,
   },
 ];
 

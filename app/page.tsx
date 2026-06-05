@@ -36,7 +36,7 @@ export default function HomePage() {
             <Database className="h-4 w-4" />
           </span>
           <span>
-            <span className="block text-sm font-semibold">Vision Console</span>
+            <span className="block text-sm font-semibold">AILAB</span>
             <span className="block text-xs text-muted-foreground">
               No-code CV training
             </span>
@@ -59,16 +59,16 @@ export default function HomePage() {
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Button asChild>
-              <Link href="/config">
+              <Link href="/login?callbackURL=/config">
                 Configure run
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
             <Button asChild variant="outline">
-              <Link href="/dataset">Browse datasets</Link>
+              <Link href="/login?callbackURL=/dataset">Browse datasets</Link>
             </Button>
             <Button asChild variant="ghost">
-              <Link href="/dashboard">Open dashboard</Link>
+              <Link href="/login?callbackURL=/dashboard">Open dashboard</Link>
             </Button>
           </div>
           <div className="mt-8 grid gap-3 sm:grid-cols-2">

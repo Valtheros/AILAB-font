@@ -108,7 +108,7 @@ export default function DashboardPage() {
                 <BackendStatusBadge />
                 <StatusBadge>4 task families</StatusBadge>
               </div>
-              <CardTitle>Training Console</CardTitle>
+              <CardTitle>Training Workspace</CardTitle>
               <CardDescription>
                 A compact run path for classification, segmentation, OCR, and
                 object detection.
@@ -141,7 +141,7 @@ export default function DashboardPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Console Status</CardTitle>
+              <CardTitle>Workspace Status</CardTitle>
               <CardDescription>
                 Stable signals for the current frontend workflow.
               </CardDescription>
