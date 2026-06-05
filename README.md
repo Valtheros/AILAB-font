@@ -1,118 +1,41 @@
-# Computer Vision Training Frontend
+# AILAB Frontend
 
-Next.js frontend for the no-code Computer Vision training platform.
+Next.js frontend for AILAB, a no-code Computer Vision training platform. The UI
+helps users upload datasets, configure models, start training, monitor progress,
+and download artifacts from the FastAPI backend.
 
-The UI lets a user:
+## What It Does
 
-- Upload and inspect datasets.
-- Select a Computer Vision task and model family.
-- Edit model-specific training parameters.
-- Submit training jobs to the FastAPI backend.
-- Monitor status, logs, and metrics.
-- Browse run artifacts and download results.
+- Sign up, verify email, log in, and manage account password.
+- Upload datasets and view backend-detected formats.
+- Configure task, model, dataset, and training parameters.
+- Submit jobs through the authenticated backend proxy.
+- Monitor logs, metrics, and status through Server-Sent Events.
+- Browse previous runs and download result files.
 
-## Supported workflows
+## Stack
 
-| Task | Models exposed in the UI |
-| --- | --- |
-| Image Classification | ResNet, EfficientNet |
-| Semantic / Instance Segmentation | DeepLabV3+, Mask R-CNN |
-| OCR / Document Vision | PaddleOCR, Tesseract |
-| Object Detection | YOLOv11, Faster R-CNN |
+- Next.js App Router
+- React and TypeScript
+- Tailwind CSS
+- Radix UI primitives
+- Zustand for draft training configuration
+- Better Auth with PostgreSQL
+- Nodemailer SMTP for verification and OTP emails
 
-The frontend requests the backend catalog from:
-
-```text
-GET /api/model-catalog
-```
-
-`lib/cvCatalog.ts` is the client fallback catalog when that API is not reachable during configuration rendering.
-
-## Pages
-
-```text
-app/
-|-- dashboard/page.tsx    # Navigation overview
-|-- dataset/page.tsx      # Upload, list, delete, and inspect dataset formats
-|-- config/page.tsx       # Task, model, dataset, and parameter configuration
-|-- training/page.tsx     # Training submission and live monitoring
-`-- results/page.tsx      # Runs, latest metrics, and artifact downloads
-```
-
-Important shared files:
-
-```text
-components/
-|-- MainLayout.tsx
-|-- Navbar.tsx
-`-- Sidebar.tsx
-
-lib/
-|-- cvCatalog.ts          # Catalog types and fallback task/model specs
-|-- useTrainingConfig.ts  # Persisted Zustand draft training config
-`-- utils.ts
-```
-
-## State and data flow
-
-`Zustand` is used for the user's draft training configuration across pages:
-
-- Selected task.
-- Selected model.
-- Selected dataset.
-- Project name.
-- Shared training settings.
-- Model-specific parameter values.
-
-Backend data stays API-driven:
-
-- Dataset list from `/api/datasets`.
-- Model catalog from `/api/model-catalog`.
-- Backend availability badge from `GET /`.
-- Live job snapshots and incremental updates from `/api/jobs/{job_id}/events`.
-- Recovery snapshots from `/api/status/{job_id}`, `/api/logs/{job_id}`, and
-  `/api/metrics/{project_name}`.
-- Run artifacts from `/api/runs`.
-
-This keeps draft UI state separate from server state.
-
-The navbar and dashboard do not assume that a worker is ready. They probe the
-backend root endpoint and display `Checking backend`, `Backend online`, or
-`Backend offline`.
-
-The training monitor uses Server-Sent Events (SSE), not interval polling. The
-browser receives one snapshot when it connects or reconnects, then appends only
-new log text and applies changed status or metrics events. The active job ID is
-stored in `sessionStorage` so refreshing the monitor reconnects to the same run.
-
-## Backend connection
-
-The frontend reads:
-
-```text
-NEXT_PUBLIC_API_URL
-```
-
-Fallback value:
-
-```text
-http://localhost:8000
-```
-
-Example `.env`:
-
-```text
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-Start the backend before using dataset, training, or result pages. A browser `TypeError: Failed to fetch` usually means the backend URL is unreachable, the backend is not running, or the page was opened outside the Next.js dev server.
-
-## Development
+## Run Locally
 
 Install dependencies:
 
 ```powershell
 npm.cmd install
+```
+
+Copy `.env.example`, fill the values you have, then run the Better Auth
+migration after PostgreSQL is available:
+
+```powershell
+npm.cmd run auth:migrate
 ```
 
 Start the dev server:
@@ -121,77 +44,66 @@ Start the dev server:
 npm.cmd run dev
 ```
 
-Open:
+Open `http://localhost:3000`.
+
+## Environment
+
+Common local values:
 
 ```text
-http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_USE_API_PROXY=true
+BACKEND_INTERNAL_URL=http://localhost:8000
+BACKEND_INTERNAL_TOKEN=
+
+BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_SECRET=replace-with-a-long-random-secret
+BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+DATABASE_URL=postgresql://ailab:ailab_dev_password@localhost:5432/ailab
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=
+SMTP_PASSWORD=
+AUTH_EMAIL_FROM=
+AUTH_EMAIL_LOG_LINKS=true
 ```
 
-On Windows PowerShell, `npm.cmd` avoids execution policy issues that can block `npm.ps1`.
+For Gmail, `SMTP_USER` must be the real sending email address and
+`SMTP_PASSWORD` must be a Google app password. If `AUTH_EMAIL_FROM` is empty,
+emails are sent as `AILAB <SMTP_USER>`.
 
-## Training request flow
+## Authentication
 
-The configuration page stores a draft in `useTrainingConfig.ts`. The training page converts it into the backend request:
+Email/password signup requires email verification before users can access the
+workspace. Forgot password uses a six-digit email OTP; the reset form is shown
+only after the OTP is verified. Form validation uses Zod and shows field-level
+errors under each input.
 
-```json
-{
-  "task_type": "image_classification",
-  "model_type": "resnet",
-  "model_name": "resnet50",
-  "dataset_name": "flowers",
-  "project_name": "flowers_1760000000000",
-  "epochs": 50,
-  "batch_size": 16,
-  "params": {
-    "device": "0",
-    "workers": 4,
-    "amp": true,
-    "architecture": "resnet50",
-    "learning_rate": 0.001
-  }
-}
+Google login is optional. Leave `NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=false` until a
+Google OAuth client ID and secret are configured.
+
+## Backend Flow
+
+Authenticated pages call:
+
+```text
+/api/backend/*
 ```
 
-## Dataset page
+The Next.js proxy validates the Better Auth session, rejects unverified email
+sessions, and forwards trusted user headers to FastAPI. Direct browser calls to
+FastAPI should be used only for local debugging.
 
-The dataset page accepts ZIP uploads and displays backend-detected metadata:
-
-- Number of images.
-- Class names when available.
-- Compatible task IDs.
-- Detected dataset format IDs.
-
-Examples of supported backend format IDs include:
-
-- `imagefolder`
-- `yolo_detection`
-- `semantic_masks`
-- `coco_instances`
-- `paddleocr_labels`
-- `tesseract_ground_truth`
-
-## Results page
-
-The results page reads backend run folders from `/api/runs` and exposes downloadable files such as:
-
-- Model weights.
-- Metrics CSV files.
-- Logs.
-- Job config JSON.
-- OCR result files.
-
-## Quality checks
-
-Lint:
+## Verification
 
 ```powershell
 npm.cmd run lint
-```
-
-Production build:
-
-```powershell
 npm.cmd run build
+npm.cmd audit --omit=dev
 ```
 
-The production build can need network access while `next/font/google` fetches Geist font metadata.
+On Windows PowerShell, use `npm.cmd` to avoid execution policy issues with
+`npm.ps1`.
