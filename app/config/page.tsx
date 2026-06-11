@@ -221,6 +221,25 @@ export default function ConfigPage() {
   const deviceOptions = useMemo(() => deviceSpec?.options ?? [], [deviceSpec]);
 
   useEffect(() => {
+    if (config.taskType === selectedTask.id && config.modelType === selectedModel.id) {
+      return;
+    }
+    setTaskModel(
+      selectedTask.id,
+      selectedModel.id,
+      selectedModel.model_name,
+      defaultParamsFor(selectedModel, catalog.common_params),
+    );
+  }, [
+    catalog.common_params,
+    config.modelType,
+    config.taskType,
+    selectedModel,
+    selectedTask.id,
+    setTaskModel,
+  ]);
+
+  useEffect(() => {
     if (deviceOptions.length === 0) return;
     const preferredDevice = String(deviceSpec?.default ?? deviceOptions[0].value);
     const currentDeviceAvailable = deviceOptions.some(

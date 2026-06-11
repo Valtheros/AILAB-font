@@ -96,7 +96,7 @@ function isOtpError(error: AuthClientError | null | undefined) {
   );
 }
 
-async function checkResetEmailExists(email: string) {
+async function requestResetEmail(email: string) {
   const response = await fetch("/api/password-reset/email", {
     body: JSON.stringify({ email }),
     headers: {
@@ -115,8 +115,7 @@ async function checkResetEmailExists(email: string) {
     );
   }
 
-  const data = (await response.json()) as { exists?: boolean };
-  return Boolean(data.exists);
+  await response.json().catch(() => null);
 }
 
 export function ForgotPasswordForm() {
@@ -199,22 +198,6 @@ export function ForgotPasswordForm() {
     return "";
   }
 
-  function showRequestError(authError: AuthClientError | null | undefined) {
-    if (isRateLimitError(authError)) {
-      if (step === "request") {
-        setRequestFieldError(
-          "email",
-          "Too many codes requested. Please wait a minute and try again."
-        );
-      } else {
-        setError("Too many codes requested. Please wait a minute and try again.");
-      }
-      return;
-    }
-
-    setError(authError?.message || "Could not send a reset code.");
-  }
-
   function showVerifyError(authError: AuthClientError | null | undefined) {
     const code = authError?.code?.toLowerCase() ?? "";
 
@@ -268,23 +251,7 @@ export function ForgotPasswordForm() {
     setIsRequesting(true);
 
     try {
-      const exists = await checkResetEmailExists(result.data.email);
-      if (!exists) {
-        setRequestFieldError(
-          "email",
-          "We could not find an account with this email."
-        );
-        return;
-      }
-
-      const response = await authClient.emailOtp.requestPasswordReset({
-        email: result.data.email,
-      });
-
-      if (response.error) {
-        showRequestError(response.error);
-        return;
-      }
+      await requestResetEmail(result.data.email);
 
       setEmail(result.data.email);
       setOtp("");
@@ -293,7 +260,7 @@ export function ForgotPasswordForm() {
       setVerifyErrors({});
       setPasswordErrors({});
       setStep("verify");
-      setNotice("A 6-digit reset code was sent to your email.");
+      setNotice("If an AILAB account exists for this email, a 6-digit reset code was sent.");
     } catch (requestError) {
       if (
         requestError instanceof PasswordResetCheckError &&

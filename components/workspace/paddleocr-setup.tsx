@@ -42,10 +42,17 @@ function folderFromPreviousRunPath(path: string) {
 }
 
 function recipeFromConfig(configPath: string, ocrTask: string): RecipeId {
-  const match = paddleRecipes.find(
-    (recipe) => recipe.configPath === configPath || recipe.task === ocrTask,
+  const exactConfigMatch = paddleRecipes.find(
+    (recipe) => recipe.configPath === configPath,
   );
-  return match?.id ?? "custom";
+  if (exactConfigMatch) {
+    return exactConfigMatch.id;
+  }
+  if (configPath.trim()) {
+    return "custom";
+  }
+  const taskMatch = paddleRecipes.find((recipe) => recipe.task === ocrTask);
+  return taskMatch?.id ?? "custom";
 }
 
 function checkpointModeFromPath(path: string): CheckpointMode {

@@ -69,7 +69,7 @@ async function readEmailFromRequest(request: NextRequest) {
 }
 
 async function rejectDuplicateSignupEmail(request: NextRequest) {
-  const ipLimit = checkRateLimit({
+  const ipLimit = await checkRateLimit({
     key: `signup-email:ip:${clientIp(request)}`,
     max: 10,
     windowMs: 60_000,
@@ -90,7 +90,7 @@ async function rejectDuplicateSignupEmail(request: NextRequest) {
   }
 
   const normalizedEmail = result.data.toLowerCase();
-  const emailLimit = checkRateLimit({
+  const emailLimit = await checkRateLimit({
     key: `signup-email:email:${normalizedEmail}`,
     max: 5,
     windowMs: 60_000,

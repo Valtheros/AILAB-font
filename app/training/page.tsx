@@ -101,6 +101,8 @@ export default function TrainingPage() {
     config.taskType,
     config.modelType,
   );
+  const effectiveTaskType = selectedTask.id;
+  const effectiveModelType = selectedModel.id;
   const deviceSpec = useMemo(
     () => catalog.common_params.find((param) => param.key === "device"),
     [catalog.common_params],
@@ -122,7 +124,7 @@ export default function TrainingPage() {
   }, [config.device, deviceOptions, deviceSpec?.default, updateConfig]);
 
   const effectiveModelName = useMemo(() => {
-    if (config.modelType === "yolo") {
+    if (effectiveModelType === "yolo") {
       const size = String(config.params.model_size ?? "n")
         .replace("yolo11", "")
         .replace(".pt", "");
@@ -132,13 +134,13 @@ export default function TrainingPage() {
     const architecture = config.params.architecture;
     if (
       typeof architecture === "string" &&
-      (config.modelType === "resnet" || config.modelType === "efficientnet")
+      (effectiveModelType === "resnet" || effectiveModelType === "efficientnet")
     ) {
       return architecture;
     }
 
     return config.modelName || selectedModel.model_name;
-  }, [config.modelName, config.modelType, config.params, selectedModel.model_name]);
+  }, [config.modelName, config.params, effectiveModelType, selectedModel.model_name]);
 
   const latestMetrics = metricsHistory[metricsHistory.length - 1];
   const epoch = numericValue(latestMetrics, "epoch") ?? 0;
@@ -189,7 +191,7 @@ export default function TrainingPage() {
       return;
     }
 
-    const generatedProjectName = `${projectSlug(config.projectName || config.modelType)}_${Date.now()}`;
+    const generatedProjectName = `${projectSlug(config.projectName || effectiveModelType)}_${Date.now()}`;
     setIsTraining(true);
     setStatus("queued");
     setLogs("Submitting training job...\n");
@@ -211,8 +213,8 @@ export default function TrainingPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          task_type: config.taskType,
-          model_type: config.modelType,
+          task_type: effectiveTaskType,
+          model_type: effectiveModelType,
           model_name: effectiveModelName,
           dataset_name: config.datasetName || undefined,
           epochs: config.epochs,

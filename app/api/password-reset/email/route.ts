@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { authUserExistsByEmail } from "@/lib/auth-database";
 import { forgotPasswordRequestSchema } from "@/lib/auth-validation";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -29,7 +30,7 @@ function rateLimitResponse(retryAfter: number) {
 }
 
 export async function POST(request: NextRequest) {
-  const ipLimit = checkRateLimit({
+  const ipLimit = await checkRateLimit({
     key: `password-reset-email:ip:${clientIp(request)}`,
     max: 10,
     windowMs: 60_000,
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const emailLimit = checkRateLimit({
+  const emailLimit = await checkRateLimit({
     key: `password-reset-email:email:${result.data.email.toLowerCase()}`,
     max: 5,
     windowMs: 60_000,
@@ -58,6 +59,12 @@ export async function POST(request: NextRequest) {
   }
 
   const exists = await authUserExistsByEmail(result.data.email);
+  if (exists) {
+    await auth.api.requestPasswordResetEmailOTP({
+      body: { email: result.data.email },
+      headers: request.headers,
+    });
+  }
 
-  return NextResponse.json({ exists });
+  return NextResponse.json({ accepted: true });
 }

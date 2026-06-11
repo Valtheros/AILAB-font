@@ -268,7 +268,7 @@ export const fallbackCatalog: CVCatalog = {
       id: "object_detection",
       label: "Object Detection",
       description: "YOLO plus Faster R-CNN for bounding-box detection.",
-      dataset_formats: ["yolo_detection", "coco_instances"],
+      dataset_formats: ["yolo_detection"],
       models: [
         {
           id: "yolo",
@@ -313,7 +313,7 @@ export const fallbackCatalog: CVCatalog = {
           model_name: "fasterrcnn_resnet50_fpn_v2",
           runtime: "PyTorch / TorchVision",
           reason: "Popular two-stage detector with TorchVision pretrained weights.",
-          dataset_formats: ["yolo_detection", "coco_instances"],
+          dataset_formats: ["yolo_detection"],
           params: detectionParams,
         },
       ],
