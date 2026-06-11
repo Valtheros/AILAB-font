@@ -1,7 +1,7 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { type NextRequest, NextResponse } from "next/server";
 
-const protectedRoutes = ["/dashboard", "/dataset", "/config", "/training", "/results", "/account"];
+const protectedRoutes = ["/dashboard", "/dataset", "/guide", "/config", "/training", "/results", "/account"];
 const authRoutes = ["/login", "/signup"];
 
 function isProtectedPath(pathname: string) {
@@ -31,5 +31,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/dataset/:path*", "/config/:path*", "/training/:path*", "/results/:path*", "/account/:path*", "/login", "/signup"],
+  matcher: ["/dashboard/:path*", "/dataset/:path*", "/guide/:path*", "/config/:path*", "/training/:path*", "/results/:path*", "/account/:path*", "/login", "/signup"],
 };

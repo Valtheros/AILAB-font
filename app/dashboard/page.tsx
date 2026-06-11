@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   Activity,
   ArrowRight,
+  BookOpenCheck,
   Boxes,
   Database,
   Download,
@@ -32,6 +33,12 @@ const quickActions = [
     description: "Bring ZIP datasets into the workspace.",
     href: "/dataset",
     icon: Database,
+  },
+  {
+    title: "Read guide",
+    description: "See model choices and dataset layouts.",
+    href: "/guide",
+    icon: BookOpenCheck,
   },
   {
     title: "Configure run",
@@ -174,7 +181,7 @@ export default function DashboardPage() {
               Jump into the page that owns each part of the workflow.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             {quickActions.map(({ description, href, icon: Icon, title }) => (
               <Link
                 className="group rounded-lg border border-border bg-background/70 p-4 transition-colors hover:bg-accent"

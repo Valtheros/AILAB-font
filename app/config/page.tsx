@@ -21,9 +21,11 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/workspace/page-header";
+import { PaddleOcrSetup } from "@/components/workspace/paddleocr-setup";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import {
   Activity,
+  BookOpenCheck,
   Boxes,
   CheckCircle,
   Cpu,
@@ -72,6 +74,8 @@ function isDatasetCompatible(dataset: Dataset, model: ModelSpec) {
     dataset.formats?.includes(format),
   );
 }
+
+const paddleOcrSetupParamKeys = new Set(["config_path", "pretrained_model"]);
 
 function coerceValue(spec: ParamSpec, raw: string | boolean): ConfigValue {
   if (spec.type === "boolean") {
@@ -227,6 +231,10 @@ export default function ConfigPage() {
 
   const commonSpecs = useMemo(() => catalog.common_params, [catalog]);
   const modelSpecs = selectedModel.params;
+  const visibleModelSpecs =
+    selectedModel.id === "paddleocr"
+      ? modelSpecs.filter((spec) => !paddleOcrSetupParamKeys.has(spec.key))
+      : modelSpecs;
 
   useEffect(() => {
     if (selectedDataset) return;
@@ -302,6 +310,14 @@ export default function ConfigPage() {
                   <Save className="h-4 w-4" />
                 )}
                 {saveStatus === "saved" ? "Saved" : "Save draft"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/guide")}
+              >
+                <BookOpenCheck className="h-4 w-4" />
+                Guide
               </Button>
               <Button size="sm" onClick={() => router.push("/training")}>
                 <Play className="h-4 w-4" />
@@ -546,15 +562,23 @@ export default function ConfigPage() {
                   Model-specific options are passed in `params` to `/api/train`.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-                {modelSpecs.map((spec) => (
-                  <ParamInput
-                    key={spec.key}
-                    spec={spec}
-                    value={config.params[spec.key] ?? spec.default}
-                    onChange={(value) => updateParam(spec.key, value)}
+              <CardContent className="space-y-5">
+                {selectedModel.id === "paddleocr" && (
+                  <PaddleOcrSetup
+                    params={config.params}
+                    onParamChange={updateParam}
                   />
-                ))}
+                )}
+                <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                  {visibleModelSpecs.map((spec) => (
+                    <ParamInput
+                      key={spec.key}
+                      spec={spec}
+                      value={config.params[spec.key] ?? spec.default}
+                      onChange={(value) => updateParam(spec.key, value)}
+                    />
+                  ))}
+                </div>
               </CardContent>
             </Card>
           </div>

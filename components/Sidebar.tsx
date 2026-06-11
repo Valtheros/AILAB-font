@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  BookOpenCheck,
   Database,
   Settings,
   Play,
@@ -26,6 +27,11 @@ const navItems = [
     title: "Dataset",
     href: "/dataset",
     icon: Database,
+  },
+  {
+    title: "Guide",
+    href: "/guide",
+    icon: BookOpenCheck,
   },
   {
     title: "Configuration",
