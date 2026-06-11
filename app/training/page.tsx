@@ -126,6 +126,7 @@ export default function TrainingPage() {
   const totalEpochs = config.epochs;
   const progressPercent =
     totalEpochs > 0 ? Math.min((epoch / totalEpochs) * 100, 100) : 0;
+  const hasSelectedDataset = Boolean(config.datasetName);
 
   const metricKeys = useMemo(() => {
     if (!latestMetrics) return [];
@@ -146,7 +147,7 @@ export default function TrainingPage() {
   const summaryItems = [
     { label: "Task", value: selectedTask.label },
     { label: "Model", value: `${selectedModel.label} (${effectiveModelName})` },
-    { label: "Dataset", value: config.datasetName || "Latest compatible" },
+    { label: "Dataset", value: config.datasetName || "No dataset selected" },
     { label: "Epochs", value: config.epochs },
     { label: "Batch", value: config.batchSize },
     { label: "Device", value: config.device === "cpu" ? "CPU" : `GPU ${config.device}` },
@@ -160,6 +161,11 @@ export default function TrainingPage() {
   }));
 
   const startTraining = async () => {
+    if (!config.datasetName) {
+      setLogs("Select a compatible dataset in Configuration before starting a run.\n");
+      return;
+    }
+
     const generatedProjectName = `${projectSlug(config.projectName || config.modelType)}_${Date.now()}`;
     setIsTraining(true);
     setStatus("queued");
@@ -391,7 +397,14 @@ export default function TrainingPage() {
                   ))}
                 </div>
               )}
-              <Button onClick={startTraining}>
+              {!hasSelectedDataset && (
+                <div className="flex">
+                  <StatusBadge tone="warning">
+                    Select a compatible dataset in Configuration first
+                  </StatusBadge>
+                </div>
+              )}
+              <Button onClick={startTraining} disabled={!hasSelectedDataset}>
                 <Play className="h-4 w-4" />
                 Start Training
               </Button>

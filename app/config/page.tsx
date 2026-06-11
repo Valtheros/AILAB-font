@@ -209,12 +209,32 @@ export default function ConfigPage() {
 
   const selectedTask = getTask(catalog, config.taskType);
   const selectedModel = getModel(catalog, selectedTask.id, config.modelType);
-  const compatibleDatasets = datasets.filter((dataset) =>
-    isDatasetCompatible(dataset, selectedModel),
+  const compatibleDatasets = useMemo(
+    () =>
+      datasets.filter((dataset) =>
+        isDatasetCompatible(dataset, selectedModel),
+      ),
+    [datasets, selectedModel],
   );
+  const selectedDataset = compatibleDatasets.find(
+    (dataset) => dataset.name === config.datasetName,
+  );
+  const datasetFormatLabel = selectedModel.dataset_formats.join(" or ");
+  const emptyDatasetMessage =
+    datasets.length === 0
+      ? "No datasets uploaded yet. Upload a dataset before starting a run."
+      : `No dataset matches ${selectedModel.label}. Upload a dataset with ${datasetFormatLabel}.`;
 
   const commonSpecs = useMemo(() => catalog.common_params, [catalog]);
   const modelSpecs = selectedModel.params;
+
+  useEffect(() => {
+    if (selectedDataset) return;
+    const nextDatasetName = compatibleDatasets[0]?.name ?? "";
+    if (config.datasetName !== nextDatasetName) {
+      updateConfig("datasetName", nextDatasetName);
+    }
+  }, [compatibleDatasets, config.datasetName, selectedDataset, updateConfig]);
 
   const handleTaskChange = (taskId: string) => {
     const task = getTask(catalog, taskId);
@@ -369,49 +389,60 @@ export default function ConfigPage() {
                   Dataset
                 </CardTitle>
                 <CardDescription>
-                  Choose compatible inputs or let the backend use the latest one.
+                  Only datasets matching the selected model format are shown.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {selectedModel.dataset_formats.map((format) => (
-                    <Badge variant="secondary" key={format}>
-                      {format}
-                    </Badge>
-                  ))}
-                </div>
-                <Select
-                  value={config.datasetName || "none"}
-                  onValueChange={(value) =>
-                    updateConfig("datasetName", value === "none" ? "" : value)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select dataset" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      Use latest compatible dataset
-                    </SelectItem>
-                    {compatibleDatasets.map((dataset) => (
-                      <SelectItem key={dataset.id} value={dataset.name}>
-                        {dataset.name}
-                      </SelectItem>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">
+                    Required format
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedModel.dataset_formats.map((format) => (
+                      <Badge variant="secondary" key={format}>
+                        {format}
+                      </Badge>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </div>
+                </div>
+                {compatibleDatasets.length > 0 ? (
+                  <Select
+                    value={config.datasetName}
+                    onValueChange={(value) => updateConfig("datasetName", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select dataset" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {compatibleDatasets.map((dataset) => (
+                        <SelectItem key={dataset.id} value={dataset.name}>
+                          {dataset.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="flex min-h-12 items-center rounded-lg border border-dashed border-border bg-background/70 px-3 text-sm text-muted-foreground">
+                    No compatible dataset
+                  </div>
+                )}
 
                 <div className="space-y-2">
-                  {compatibleDatasets.slice(0, 3).map((dataset) => (
+                  {compatibleDatasets.map((dataset) => (
                     <div
                       key={dataset.id}
                       className="rounded-lg border border-border bg-background/70 p-3 text-sm"
                     >
                       <div className="flex items-center justify-between gap-3">
                         <span className="break-words font-medium">{dataset.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {dataset.size}
-                        </span>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {selectedDataset?.name === dataset.name && (
+                            <StatusBadge tone="success">Selected</StatusBadge>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {dataset.size}
+                          </span>
+                        </div>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         {dataset.images.toLocaleString()} images -{" "}
@@ -423,8 +454,7 @@ export default function ConfigPage() {
                     <div className="rounded-lg border border-dashed border-border bg-background/70 p-3">
                       <StatusBadge tone="warning">No compatible dataset</StatusBadge>
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        Upload a dataset that matches the selected model formats
-                        before enqueueing a run.
+                        {emptyDatasetMessage}
                       </p>
                     </div>
                   )}

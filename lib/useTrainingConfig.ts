@@ -93,6 +93,7 @@ export const useTrainingConfig = create<TrainingConfigStore>()(
             taskType,
             modelType,
             modelName,
+            datasetName: "",
             params: defaults,
           },
         })),
