@@ -123,25 +123,27 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 md:grid-cols-4">
-                {workflowStages.map(({ description, icon: Icon, title }, index) => (
-                  <div
-                    className="rounded-lg border border-border bg-background/70 p-4"
-                    key={title}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border">
-                        <Icon className="h-4 w-4" />
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        0{index + 1}
-                      </span>
+                {workflowStages.map(
+                  ({ description, icon: Icon, title }, index) => (
+                    <div
+                      className="rounded-lg border border-border bg-background/70 p-4"
+                      key={title}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border">
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          0{index + 1}
+                        </span>
+                      </div>
+                      <h2 className="mt-5 text-sm font-semibold">{title}</h2>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                        {description}
+                      </p>
                     </div>
-                    <h2 className="mt-5 text-sm font-semibold">{title}</h2>
-                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                      {description}
-                    </p>
-                  </div>
-                ))}
+                  ),
+                )}
               </div>
             </CardContent>
           </Card>
@@ -166,9 +168,8 @@ export default function DashboardPage() {
                 ))}
               </div>
               <Separator />
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap">
                 <BackendStatusBadge />
-                <StatusBadge>Frontend available</StatusBadge>
               </div>
             </CardContent>
           </Card>

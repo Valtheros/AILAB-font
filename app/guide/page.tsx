@@ -4,6 +4,7 @@ import {
   BadgeCheck,
   BookOpenCheck,
   Boxes,
+  CheckCircle2,
   Crosshair,
   Database,
   Download,
@@ -370,8 +371,11 @@ export default function GuidePage() {
                     </p>
                     <div className="mt-4 space-y-2">
                       {checklist.map((item) => (
-                        <div className="flex items-start gap-2" key={item}>
-                          <StatusBadge tone="success">OK</StatusBadge>
+                        <div className="flex items-start gap-2.5" key={item}>
+                          <CheckCircle2
+                            aria-hidden="true"
+                            className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400"
+                          />
                           <p className="text-xs leading-5 text-muted-foreground">
                             {item}
                           </p>
