@@ -174,6 +174,7 @@ export default function ConfigPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
     "idle",
   );
+  const [deviceTouched, setDeviceTouched] = useState(false);
 
   useEffect(() => {
     const loadCatalog = async () => {
@@ -213,6 +214,26 @@ export default function ConfigPage() {
 
   const selectedTask = getTask(catalog, config.taskType);
   const selectedModel = getModel(catalog, selectedTask.id, config.modelType);
+  const deviceSpec = useMemo(
+    () => catalog.common_params.find((param) => param.key === "device"),
+    [catalog.common_params],
+  );
+  const deviceOptions = useMemo(() => deviceSpec?.options ?? [], [deviceSpec]);
+
+  useEffect(() => {
+    if (deviceOptions.length === 0) return;
+    const preferredDevice = String(deviceSpec?.default ?? deviceOptions[0].value);
+    const currentDeviceAvailable = deviceOptions.some(
+      (option) => option.value === config.device,
+    );
+    const shouldPreferGpuDefault =
+      !deviceTouched && preferredDevice !== "cpu" && config.device === "cpu";
+
+    if (!currentDeviceAvailable || shouldPreferGpuDefault) {
+      updateConfig("device", preferredDevice);
+    }
+  }, [config.device, deviceOptions, deviceSpec?.default, deviceTouched, updateConfig]);
+
   const compatibleDatasets = useMemo(
     () =>
       datasets.filter((dataset) =>
@@ -267,11 +288,24 @@ export default function ConfigPage() {
     );
   };
 
+  const commonValue = (spec: ParamSpec) => {
+    if (spec.key === "epochs") return config.epochs;
+    if (spec.key === "batch_size") return config.batchSize;
+    if (spec.key === "device") return config.device;
+    if (spec.key === "workers") return config.workers;
+    if (spec.key === "amp") return config.amp;
+    if (spec.key === "seed") return config.seed;
+    return config.params[spec.key] ?? spec.default;
+  };
+
   const handleCommonParam = (spec: ParamSpec, value: ConfigValue) => {
     updateParam(spec.key, value);
     if (spec.key === "epochs") updateConfig("epochs", Number(value));
     if (spec.key === "batch_size") updateConfig("batchSize", Number(value));
-    if (spec.key === "device") updateConfig("device", String(value));
+    if (spec.key === "device") {
+      setDeviceTouched(true);
+      updateConfig("device", String(value));
+    }
     if (spec.key === "workers") updateConfig("workers", Number(value));
     if (spec.key === "amp") updateConfig("amp", Boolean(value));
     if (spec.key === "seed") updateConfig("seed", Number(value));
@@ -294,7 +328,14 @@ export default function ConfigPage() {
           description="Choose a task, model family, dataset, and trainer parameters before opening the training monitor."
           actions={
             <>
-              <Button variant="outline" size="sm" onClick={resetConfig}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  resetConfig();
+                  setDeviceTouched(false);
+                }}
+              >
                 <RotateCcw className="h-4 w-4" />
                 Reset
               </Button>
@@ -548,7 +589,7 @@ export default function ConfigPage() {
                   <ParamInput
                     key={spec.key}
                     spec={spec}
-                    value={config.params[spec.key] ?? spec.default}
+                    value={commonValue(spec)}
                     onChange={(value) => handleCommonParam(spec, value)}
                   />
                 ))}

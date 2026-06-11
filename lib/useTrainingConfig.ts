@@ -29,7 +29,7 @@ export const defaultConfig: TrainingConfig = {
   projectName: "cv_run",
   epochs: 50,
   batchSize: 16,
-  device: "0",
+  device: "cpu",
   workers: 4,
   amp: true,
   seed: 0,
@@ -76,9 +76,26 @@ export const useTrainingConfig = create<TrainingConfigStore>()(
     (set) => ({
       config: defaultConfig,
       updateConfig: (key, value) =>
-        set((state) => ({
-          config: { ...state.config, [key]: value },
-        })),
+        set((state) => {
+          const paramKeyByConfigKey: Partial<Record<keyof Omit<TrainingConfig, "params">, string>> = {
+            epochs: "epochs",
+            batchSize: "batch_size",
+            device: "device",
+            workers: "workers",
+            amp: "amp",
+            seed: "seed",
+          };
+          const paramKey = paramKeyByConfigKey[key];
+          return {
+            config: {
+              ...state.config,
+              [key]: value,
+              params: paramKey
+                ? { ...state.config.params, [paramKey]: value }
+                : state.config.params,
+            },
+          };
+        }),
       updateParam: (key, value) =>
         set((state) => ({
           config: {

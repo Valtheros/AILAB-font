@@ -82,7 +82,7 @@ function statusTone(value: string): StatusTone {
 }
 
 export default function TrainingPage() {
-  const { config } = useTrainingConfig();
+  const { config, updateConfig } = useTrainingConfig();
   const [isTraining, setIsTraining] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string | null>(null);
@@ -101,6 +101,25 @@ export default function TrainingPage() {
     config.taskType,
     config.modelType,
   );
+  const deviceSpec = useMemo(
+    () => catalog.common_params.find((param) => param.key === "device"),
+    [catalog.common_params],
+  );
+  const deviceOptions = useMemo(() => deviceSpec?.options ?? [], [deviceSpec]);
+
+  useEffect(() => {
+    if (deviceOptions.length === 0) return;
+    const fallbackDevice = String(deviceSpec?.default ?? deviceOptions[0].value);
+    const currentDeviceAvailable = deviceOptions.some(
+      (option) => option.value === config.device,
+    );
+    const shouldPreferGpuDefault =
+      fallbackDevice !== "cpu" && config.device === "cpu";
+
+    if (!currentDeviceAvailable || shouldPreferGpuDefault) {
+      updateConfig("device", fallbackDevice);
+    }
+  }, [config.device, deviceOptions, deviceSpec?.default, updateConfig]);
 
   const effectiveModelName = useMemo(() => {
     if (config.modelType === "yolo") {
@@ -144,13 +163,17 @@ export default function TrainingPage() {
       key.includes("recall"),
   );
 
+  const selectedDeviceLabel =
+    deviceOptions.find((option) => option.value === config.device)?.label ??
+    (config.device === "cpu" ? "CPU" : `GPU ${config.device}`);
+
   const summaryItems = [
     { label: "Task", value: selectedTask.label },
     { label: "Model", value: `${selectedModel.label} (${effectiveModelName})` },
     { label: "Dataset", value: config.datasetName || "No dataset selected" },
     { label: "Epochs", value: config.epochs },
     { label: "Batch", value: config.batchSize },
-    { label: "Device", value: config.device === "cpu" ? "CPU" : `GPU ${config.device}` },
+    { label: "Device", value: selectedDeviceLabel },
     { label: "Workers", value: config.workers },
     { label: "AMP", value: config.amp ? "On" : "Off" },
   ];

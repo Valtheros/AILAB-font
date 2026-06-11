@@ -13,7 +13,7 @@ import {
 import { EmptyState } from "@/components/workspace/empty-state";
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
-import { Download, FileText, History, RefreshCw, Trophy } from "lucide-react";
+import { Download, FileText, History, RefreshCw, Trash2, Trophy, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
 
@@ -53,6 +53,9 @@ export default function ResultsPage() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deletingProject, setDeletingProject] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
 
   const fetchRuns = useCallback(async () => {
     setIsLoading(true);
@@ -66,6 +69,7 @@ export default function ResultsPage() {
       const data = await response.json();
       const nextRuns = data.runs ?? [];
       setLoadError("");
+      setDeleteError("");
       setRuns(nextRuns);
       setSelectedProject((current) =>
         nextRuns.some((run: TrainingRun) => run.project_name === current)
@@ -97,6 +101,34 @@ export default function ResultsPage() {
       file.name.endsWith(`.${extension}`),
     ),
   );
+
+  const handleDeleteRun = async (projectName: string) => {
+    setDeletingProject(projectName);
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/runs/${encodeURIComponent(projectName)}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `Delete failed with status ${response.status}`);
+      }
+
+      const remainingRuns = runs.filter((run) => run.project_name !== projectName);
+      setRuns(remainingRuns);
+      setSelectedProject((current) =>
+        current === projectName ? remainingRuns[0]?.project_name ?? null : current,
+      );
+      setDeleteConfirm(null);
+      setDeleteError("");
+    } catch (error) {
+      console.error("Failed to delete run:", error);
+      setDeleteError(`Could not delete ${projectName}. Check the backend and retry.`);
+    } finally {
+      setDeletingProject(null);
+    }
+  };
 
   return (
     <MainLayout>
@@ -183,17 +215,53 @@ export default function ResultsPage() {
                           {selectedRun.dataset_name ?? "Dataset not recorded"}
                         </CardDescription>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         {selectedRun.task_type && (
                           <Badge variant="outline">{selectedRun.task_type}</Badge>
                         )}
                         {selectedRun.model_type && (
                           <Badge variant="outline">{selectedRun.model_type}</Badge>
                         )}
+                        {deleteConfirm === selectedRun.project_name ? (
+                          <>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              disabled={deletingProject === selectedRun.project_name}
+                              onClick={() => handleDeleteRun(selectedRun.project_name)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              {deletingProject === selectedRun.project_name ? "Deleting" : "Confirm delete"}
+                            </Button>
+                            <Button
+                              aria-label="Cancel delete"
+                              variant="ghost"
+                              size="icon"
+                              disabled={deletingProject === selectedRun.project_name}
+                              onClick={() => setDeleteConfirm(null)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            aria-label={`Delete ${selectedRun.project_name}`}
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteConfirm(selectedRun.project_name)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent>
+                    {deleteError && (
+                      <p className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                        {deleteError}
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                       {[
                         ["Model", selectedRun.model_name ?? "-"],

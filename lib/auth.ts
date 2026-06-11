@@ -23,8 +23,13 @@ const trustedOrigins = (
 const secret = process.env.BETTER_AUTH_SECRET ?? "dev-only-change-me-in-production";
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+const isProductionBuild = process.env.NEXT_PHASE === "phase-production-build";
 
-if (process.env.NODE_ENV === "production" && secret === "dev-only-change-me-in-production") {
+if (
+  process.env.NODE_ENV === "production" &&
+  !isProductionBuild &&
+  secret === "dev-only-change-me-in-production"
+) {
   throw new Error("BETTER_AUTH_SECRET must be set in production.");
 }
 
