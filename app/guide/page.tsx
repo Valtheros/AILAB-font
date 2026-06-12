@@ -46,6 +46,15 @@ interface TreeRow {
   depth: number;
 }
 
+interface GuidePageProps {
+  searchParams?: Promise<{ tab?: string | string[] }> | { tab?: string | string[] };
+}
+
+function guideTabFromSearch(value: string | string[] | undefined) {
+  const tab = Array.isArray(value) ? value[0] : value;
+  return tab === "datasets" || tab === "ocr" || tab === "models" ? tab : "models";
+}
+
 const workflowStages = [
   {
     title: "Upload",
@@ -252,7 +261,10 @@ function DatasetDiagram({
   );
 }
 
-export default function GuidePage() {
+export default async function GuidePage({ searchParams }: GuidePageProps) {
+  const resolvedSearchParams = await searchParams;
+  const defaultTab = guideTabFromSearch(resolvedSearchParams?.tab);
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -337,7 +349,7 @@ export default function GuidePage() {
           </Card>
         </section>
 
-        <Tabs defaultValue="models" className="space-y-4">
+        <Tabs defaultValue={defaultTab} className="space-y-4">
           <TabsList className="h-auto flex-wrap justify-start">
             <TabsTrigger value="models">Model guide</TabsTrigger>
             <TabsTrigger value="datasets">Dataset layouts</TabsTrigger>

@@ -33,7 +33,6 @@ import {
   FileText,
   Play,
   RotateCcw,
-  Save,
   Settings,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -163,18 +162,20 @@ function ParamInput({
 
 export default function ConfigPage() {
   const router = useRouter();
-  const { config, updateConfig, updateParam, setTaskModel, resetConfig } =
-    useTrainingConfig();
+  const {
+    config,
+    deviceSelection,
+    updateConfig,
+    updateParam,
+    setTaskModel,
+    resetConfig,
+  } = useTrainingConfig();
   const [catalog, setCatalog] = useState<CVCatalog>(fallbackCatalog);
   const [catalogSource, setCatalogSource] = useState<"backend" | "fallback">(
     "backend",
   );
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [datasetError, setDatasetError] = useState("");
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
-    "idle",
-  );
-  const [deviceTouched, setDeviceTouched] = useState(false);
 
   useEffect(() => {
     const loadCatalog = async () => {
@@ -246,12 +247,12 @@ export default function ConfigPage() {
       (option) => option.value === config.device,
     );
     const shouldPreferGpuDefault =
-      !deviceTouched && preferredDevice !== "cpu" && config.device === "cpu";
+      deviceSelection === "auto" && preferredDevice !== "cpu" && config.device === "cpu";
 
     if (!currentDeviceAvailable || shouldPreferGpuDefault) {
-      updateConfig("device", preferredDevice);
+      updateConfig("device", preferredDevice, { deviceSelection: "auto" });
     }
-  }, [config.device, deviceOptions, deviceSpec?.default, deviceTouched, updateConfig]);
+  }, [config.device, deviceOptions, deviceSelection, deviceSpec?.default, updateConfig]);
 
   const compatibleDatasets = useMemo(
     () =>
@@ -322,20 +323,11 @@ export default function ConfigPage() {
     if (spec.key === "epochs") updateConfig("epochs", Number(value));
     if (spec.key === "batch_size") updateConfig("batchSize", Number(value));
     if (spec.key === "device") {
-      setDeviceTouched(true);
-      updateConfig("device", String(value));
+      updateConfig("device", String(value), { deviceSelection: "manual" });
     }
     if (spec.key === "workers") updateConfig("workers", Number(value));
     if (spec.key === "amp") updateConfig("amp", Boolean(value));
     if (spec.key === "seed") updateConfig("seed", Number(value));
-  };
-
-  const saveConfig = () => {
-    setSaveStatus("saving");
-    setTimeout(() => {
-      setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 1600);
-    }, 250);
   };
 
   return (
@@ -350,26 +342,10 @@ export default function ConfigPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  resetConfig();
-                  setDeviceTouched(false);
-                }}
+                onClick={resetConfig}
               >
                 <RotateCcw className="h-4 w-4" />
                 Reset
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={saveConfig}
-                disabled={saveStatus === "saving"}
-              >
-                {saveStatus === "saved" ? (
-                  <CheckCircle className="h-4 w-4 text-emerald-500" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                {saveStatus === "saved" ? "Saved" : "Save draft"}
               </Button>
               <Button
                 variant="outline"

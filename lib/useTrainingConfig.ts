@@ -57,9 +57,20 @@ function normalizeConfig(config?: Partial<TrainingConfig>): TrainingConfig {
   };
 }
 
+type DeviceSelectionMode = "auto" | "manual";
+
+interface UpdateConfigOptions {
+  deviceSelection?: DeviceSelectionMode;
+}
+
 interface TrainingConfigStore {
   config: TrainingConfig;
-  updateConfig: (key: keyof Omit<TrainingConfig, "params">, value: ConfigValue) => void;
+  deviceSelection: DeviceSelectionMode;
+  updateConfig: (
+    key: keyof Omit<TrainingConfig, "params">,
+    value: ConfigValue,
+    options?: UpdateConfigOptions,
+  ) => void;
   updateParam: (key: string, value: ConfigValue) => void;
   setTaskModel: (
     taskType: string,
@@ -75,7 +86,8 @@ export const useTrainingConfig = create<TrainingConfigStore>()(
   persist(
     (set) => ({
       config: defaultConfig,
-      updateConfig: (key, value) =>
+      deviceSelection: "auto",
+      updateConfig: (key, value, options) =>
         set((state) => {
           const paramKeyByConfigKey: Partial<Record<keyof Omit<TrainingConfig, "params">, string>> = {
             epochs: "epochs",
@@ -94,6 +106,10 @@ export const useTrainingConfig = create<TrainingConfigStore>()(
                 ? { ...state.config.params, [paramKey]: value }
                 : state.config.params,
             },
+            deviceSelection:
+              key === "device"
+                ? options?.deviceSelection ?? "manual"
+                : state.deviceSelection,
           };
         }),
       updateParam: (key, value) =>
@@ -111,10 +127,13 @@ export const useTrainingConfig = create<TrainingConfigStore>()(
             modelType,
             modelName,
             datasetName: "",
-            params: defaults,
+            params: {
+              ...defaults,
+              device: state.config.device,
+            },
           },
         })),
-      resetConfig: () => set({ config: defaultConfig }),
+      resetConfig: () => set({ config: defaultConfig, deviceSelection: "auto" }),
       setConfig: (config) => set({ config: normalizeConfig(config) }),
     }),
     {
@@ -124,6 +143,7 @@ export const useTrainingConfig = create<TrainingConfigStore>()(
         return {
           ...current,
           config: normalizeConfig(persistedState?.config),
+          deviceSelection: persistedState?.deviceSelection ?? "auto",
         };
       },
     },

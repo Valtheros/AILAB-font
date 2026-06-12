@@ -82,7 +82,7 @@ function statusTone(value: string): StatusTone {
 }
 
 export default function TrainingPage() {
-  const { config, updateConfig } = useTrainingConfig();
+  const { config, deviceSelection, updateConfig } = useTrainingConfig();
   const [isTraining, setIsTraining] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string | null>(null);
@@ -116,12 +116,12 @@ export default function TrainingPage() {
       (option) => option.value === config.device,
     );
     const shouldPreferGpuDefault =
-      fallbackDevice !== "cpu" && config.device === "cpu";
+      deviceSelection === "auto" && fallbackDevice !== "cpu" && config.device === "cpu";
 
     if (!currentDeviceAvailable || shouldPreferGpuDefault) {
-      updateConfig("device", fallbackDevice);
+      updateConfig("device", fallbackDevice, { deviceSelection: "auto" });
     }
-  }, [config.device, deviceOptions, deviceSpec?.default, updateConfig]);
+  }, [config.device, deviceOptions, deviceSelection, deviceSpec?.default, updateConfig]);
 
   const effectiveModelName = useMemo(() => {
     if (effectiveModelType === "yolo") {

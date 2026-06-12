@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { MainLayout } from "@/components/MainLayout";
 import {
   Card,
@@ -16,6 +17,7 @@ import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import {
   AlertCircle,
+  BookOpenCheck,
   Archive,
   CheckCircle2,
   Database,
@@ -181,10 +183,18 @@ export default function DatasetPage() {
           title="Dataset Management"
           description="Upload ZIP datasets, inspect detected formats, and keep training inputs compatible with the selected model."
           actions={
-            <Button variant="outline" onClick={fetchDatasets} disabled={isLoading}>
-              <RefreshCw className={isLoading ? "animate-spin" : ""} />
-              Refresh
-            </Button>
+            <>
+              <Button asChild variant="outline">
+                <Link href="/guide?tab=datasets">
+                  <BookOpenCheck className="h-4 w-4" />
+                  Dataset layouts
+                </Link>
+              </Button>
+              <Button variant="outline" onClick={fetchDatasets} disabled={isLoading}>
+                <RefreshCw className={isLoading ? "animate-spin" : ""} />
+                Refresh
+              </Button>
+            </>
           }
         />
 

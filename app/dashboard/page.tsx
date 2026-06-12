@@ -22,9 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/workspace/page-header";
-import { BackendStatusBadge } from "@/components/workspace/backend-status-badge";
 import { StatusBadge } from "@/components/workspace/status-badge";
 
 const quickActions = [
@@ -112,7 +110,6 @@ export default function DashboardPage() {
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center gap-2">
-                <BackendStatusBadge />
                 <StatusBadge>4 task families</StatusBadge>
               </div>
               <CardTitle>Training Workspace</CardTitle>
@@ -166,10 +163,6 @@ export default function DashboardPage() {
                     <p className="mt-4 text-sm font-medium">{label}</p>
                   </div>
                 ))}
-              </div>
-              <Separator />
-              <div className="flex flex-wrap">
-                <BackendStatusBadge />
               </div>
             </CardContent>
           </Card>
