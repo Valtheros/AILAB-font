@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useLanguage } from "@/components/language-provider";
 import { authClient } from "@/lib/auth-client";
 
 function callbackFor(pathname: string, search: string) {
@@ -19,6 +20,7 @@ function callbackFor(pathname: string, search: string) {
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
+  const { t } = useLanguage();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -73,7 +75,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Checking session
+          {t("auth.gate.checking")}
         </div>
       </div>
     );
@@ -89,8 +91,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             </div>
             <CardTitle>Verify your email</CardTitle>
             <CardDescription>
-              Confirm your email address before opening datasets, runs, logs,
-              and artifacts.
+              {t("auth.gate.verifyDescription")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

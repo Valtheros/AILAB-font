@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { I18nText } from "@/components/i18n-text";
 import { getCurrentSession } from "@/lib/session";
 
 export default async function AccountPage() {
@@ -24,12 +25,12 @@ export default async function AccountPage() {
         <PageHeader
           eyebrow="Account"
           title="User workspace"
-          description="Account details used to scope datasets, training runs, logs, and artifacts."
+          description={<I18nText textKey="account.header.description" />}
         />
         <Card>
           <CardHeader>
             <CardTitle>Signed in user</CardTitle>
-            <CardDescription>Your account profile and email status.</CardDescription>
+            <CardDescription><I18nText textKey="account.profile.description" /></CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-md border border-border p-4">

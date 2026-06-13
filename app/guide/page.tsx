@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  AlertCircle,
   ArrowRight,
   BadgeCheck,
   BookOpenCheck,
@@ -13,7 +14,6 @@ import {
   Folder,
   Image as ImageIcon,
   Layers3,
-  Play,
   ScanText,
   Settings2,
   SlidersHorizontal,
@@ -37,8 +37,11 @@ import {
 } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { I18nText } from "@/components/i18n-text";
 
 type TreeKind = "folder" | "image" | "file";
+
+type GuideTab = "workflow" | "models" | "datasets" | "ocr";
 
 interface TreeRow {
   label: string;
@@ -50,117 +53,275 @@ interface GuidePageProps {
   searchParams?: Promise<{ tab?: string | string[] }> | { tab?: string | string[] };
 }
 
-function guideTabFromSearch(value: string | string[] | undefined) {
+interface ModelGuide {
+  title: string;
+  task: string;
+  format: string;
+  accepted: string[];
+  icon: typeof Boxes;
+  useWhen: string;
+  prepare: string[];
+  importResult: string[];
+  configure: string[];
+  avoid: string[];
+}
+
+function guideTabFromSearch(value: string | string[] | undefined): GuideTab {
   const tab = Array.isArray(value) ? value[0] : value;
-  return tab === "datasets" || tab === "ocr" || tab === "models" ? tab : "models";
+  return tab === "workflow" || tab === "datasets" || tab === "ocr" || tab === "models"
+    ? tab
+    : "workflow";
 }
 
 const workflowStages = [
   {
-    title: "Upload",
-    description: "Zip the dataset and upload it on the Dataset page.",
+    title: "Choose the task",
+    description: "Decide what the answer should look like: one class, boxes, masks, or text.",
+    icon: BookOpenCheck,
+  },
+  {
+    title: "Prepare labels",
+    description: "Export a ZIP from a supported annotation tool or arrange files in the shown layout.",
+    icon: FileArchive,
+  },
+  {
+    title: "Inspect and import",
+    description: "Upload the ZIP, review detected formats and ready models, then import it.",
     icon: Upload,
   },
   {
-    title: "Match",
-    description: "Pick a model; AILAB filters datasets by compatible format.",
-    icon: Database,
-  },
-  {
-    title: "Tune",
-    description: "Adjust shared settings and model-specific parameters.",
+    title: "Configure model",
+    description: "Open Configuration, pick a compatible dataset, set the model options, and review the run.",
     icon: SlidersHorizontal,
   },
   {
-    title: "Train",
-    description: "Queue the job and monitor logs, status, and metrics.",
-    icon: Play,
-  },
-  {
-    title: "Export",
-    description: "Download weights, logs, metrics, and OCR artifacts.",
+    title: "Train and export",
+    description: "Start training, watch logs and metrics, then download artifacts from Results.",
     icon: Download,
   },
 ];
 
-const modelGuides = [
+const decisionRows = [
+  {
+    need: "One label for the whole image",
+    model: "ResNet or EfficientNet",
+    dataset: "ImageFolder",
+  },
+  {
+    need: "Find object positions with boxes",
+    model: "YOLOv11 or Faster R-CNN",
+    dataset: "YOLO detection or COCO boxes",
+  },
+  {
+    need: "Classify every pixel",
+    model: "DeepLabV3+",
+    dataset: "Image and semantic mask pairs",
+  },
+  {
+    need: "Separate object masks per instance",
+    model: "Mask R-CNN",
+    dataset: "COCO instance masks",
+  },
+  {
+    need: "Read cropped words or text lines",
+    model: "PaddleOCR recognition or Tesseract",
+    dataset: "PaddleOCR rec labels or Tesseract .gt.txt",
+  },
+  {
+    need: "Find text regions in full images",
+    model: "PaddleOCR detection",
+    dataset: "PaddleOCR det labels",
+  },
+];
+
+const modelGuides: ModelGuide[] = [
   {
     title: "ResNet / EfficientNet",
     task: "Image classification",
     format: "imagefolder",
+    accepted: ["ImageFolder"],
     icon: Boxes,
-    checklist: [
-      "Put images inside one folder per class.",
-      "Use ImageNet weights for the first run.",
-      "Start with 224 image size and increase only if needed.",
+    useWhen: "Use when each image has exactly one final class, such as pass/fail, product type, or disease category.",
+    prepare: [
+      "Create one folder per class under train/.",
+      "Put validation images under val/ with the same class folder names when available.",
+      "Do not mix detection labels or masks inside the class folders.",
     ],
-    next: "Use this when the answer is one class per image.",
+    importResult: [
+      "AILAB detects imagefolder.",
+      "Ready models should include ResNet and EfficientNet.",
+    ],
+    configure: [
+      "Start with ImageNet weights enabled.",
+      "Use image size 224 for the first run.",
+      "Increase epochs only after confirming the first run learns.",
+    ],
+    avoid: [
+      "Do not use this when one image can contain multiple objects that need positions.",
+      "Do not use this when the output must be a mask or text string.",
+    ],
   },
   {
-    title: "YOLOv11 / Faster R-CNN",
+    title: "YOLOv11",
     task: "Object detection",
     format: "yolo_detection",
+    accepted: ["YOLO detection", "COCO boxes converted by import"],
     icon: Crosshair,
-    checklist: [
-      "Include data.yaml at the dataset root.",
-      "Pair images/train with labels/train text files.",
-      "Choose YOLOv11 for speed; Faster R-CNN for a two-stage baseline.",
+    useWhen: "Use when the goal is fast bounding-box detection for one or more objects in each image.",
+    prepare: [
+      "Use YOLO labels with data.yaml, images/train, and labels/train.",
+      "COCO box datasets can also be uploaded; AILAB creates YOLO files under .ailab_normalized.",
+      "Each label row must be class_id x_center y_center width height with normalized values.",
     ],
-    next: "Use this when each image needs bounding boxes.",
+    importResult: [
+      "Ready models should include YOLOv11 when yolo_detection is present.",
+      "COCO box uploads should show normalized YOLO detection format after import.",
+    ],
+    configure: [
+      "Start with Nano or Small model size for a quick baseline.",
+      "Keep pretrained weights enabled.",
+      "Use 640 image size unless small objects need more detail.",
+    ],
+    avoid: [
+      "Do not upload YOLO polygon segmentation and expect detection unless boxes dominate.",
+      "Do not use this when each object needs a separate mask.",
+    ],
+  },
+  {
+    title: "Faster R-CNN",
+    task: "Object detection",
+    format: "yolo_detection or coco_instances",
+    accepted: ["YOLO detection", "COCO boxes"],
+    icon: Crosshair,
+    useWhen: "Use when a two-stage detector baseline is preferred over YOLO speed.",
+    prepare: [
+      "Upload YOLO detection or COCO box annotations.",
+      "COCO files must reference image filenames that exist inside the ZIP.",
+      "Box-only COCO is valid for Faster R-CNN.",
+    ],
+    importResult: [
+      "Ready models should include Faster R-CNN for YOLO or COCO box datasets.",
+      "No mask annotations are required for this model.",
+    ],
+    configure: [
+      "Keep COCO weights enabled for the first run.",
+      "Use short side 640 and long side cap 1333 as the initial baseline.",
+      "Tune score threshold after training when reviewing predictions.",
+    ],
+    avoid: [
+      "Do not choose this for pure image classification.",
+      "Do not expect pixel masks from this detector.",
+    ],
   },
   {
     title: "DeepLabV3+",
     task: "Semantic segmentation",
     format: "semantic_masks",
+    accepted: ["Image and mask pairs"],
     icon: Layers3,
-    checklist: [
-      "Each image needs a matching mask file.",
-      "Set Mask classes to the number of pixel classes.",
-      "Use ignore value 255 when masks contain unlabeled pixels.",
+    useWhen: "Use when every pixel needs one class, such as road/background/object area.",
+    prepare: [
+      "Create train/images and train/masks folders.",
+      "Each image must have a mask with the same base filename.",
+      "Mask pixel values must match the class IDs used for training.",
     ],
-    next: "Use this when every pixel needs a class.",
+    importResult: [
+      "Ready models should include DeepLabV3+ only.",
+      "Import will fail if masks are missing for images.",
+    ],
+    configure: [
+      "Set Mask classes to the number of pixel classes.",
+      "Use ignore value 255 only if masks contain unlabeled pixels.",
+      "Start with resnet34 encoder and ImageNet weights.",
+    ],
+    avoid: [
+      "Do not use this when separate instances of the same class must be distinguished.",
+      "Do not use RGB color masks unless they are encoded into class IDs first.",
+    ],
   },
   {
     title: "Mask R-CNN",
     task: "Instance segmentation",
     format: "coco_instances",
+    accepted: ["COCO instance masks"],
     icon: BadgeCheck,
-    checklist: [
-      "Use COCO-style JSON annotations.",
-      "Make sure image filenames in JSON resolve inside the dataset.",
-      "Use this when separate object instances matter.",
+    useWhen: "Use when each object needs both a box and its own instance mask.",
+    prepare: [
+      "Export COCO JSON with segmentation polygons or RLE masks.",
+      "Include images referenced by the COCO file inside the ZIP.",
+      "Make sure annotations contain real masks, not only bounding boxes.",
     ],
-    next: "Use this when objects need masks and identity.",
+    importResult: [
+      "Ready models should include Mask R-CNN only when COCO masks are present.",
+      "COCO box-only datasets stay compatible with Faster R-CNN but not Mask R-CNN.",
+    ],
+    configure: [
+      "Keep COCO weights enabled for the first run.",
+      "Use the default detection thresholds until a baseline finishes.",
+      "Check failed imports for missing image references in JSON.",
+    ],
+    avoid: [
+      "Do not choose Mask R-CNN for box-only COCO datasets.",
+      "Do not use semantic masks where all objects of one class are merged together.",
+    ],
   },
   {
     title: "PaddleOCR",
-    task: "OCR",
+    task: "OCR detection or recognition",
     format: "paddleocr_labels",
+    accepted: ["PaddleOCR rec/det labels", "Tesseract .gt.txt converted to rec"],
     icon: ScanText,
-    checklist: [
-      "Choose recognition for cropped text images.",
-      "Choose detection for text boxes or polygons.",
-      "Use the PaddleOCR setup helper to select config and checkpoint.",
+    useWhen: "Use when training OCR with PaddleOCR recipes for text detection or text recognition.",
+    prepare: [
+      "For recognition, use cropped text images with rec_gt_train.txt.",
+      "For detection, use full images with det_gt_train.txt box or polygon labels.",
+      "Tesseract .gt.txt recognition data can be imported and normalized for PaddleOCR recognition.",
     ],
-    next: "Use this for OCR fine-tuning with PaddleOCR labels.",
+    importResult: [
+      "Ready models should include PaddleOCR when paddleocr_labels is present.",
+      "Preview shows OCR tasks such as rec or det.",
+    ],
+    configure: [
+      "Choose Recognition or Detection in the PaddleOCR base model selector.",
+      "Use the preset config before trying custom paths.",
+      "Use Previous run only when fine-tuning from an AILAB OCR checkpoint.",
+    ],
+    avoid: [
+      "Do not choose recognition for full-page images unless text is already cropped.",
+      "Do not choose detection when your labels only contain transcript text.",
+    ],
   },
   {
     title: "Tesseract",
-    task: "OCR",
+    task: "OCR language/font adaptation",
     format: "tesseract_ground_truth",
+    accepted: ["Tesseract .gt.txt", "PaddleOCR rec converted to .gt.txt"],
     icon: FileText,
-    checklist: [
-      "Pair each training image with a matching .gt.txt file.",
-      "Use a short output model code such as invoice_th.",
-      "Increase max iterations for harder fonts or languages.",
+    useWhen: "Use when adapting Tesseract to a language, font, scanner style, or document source.",
+    prepare: [
+      "Pair each image with a matching .gt.txt file using the same base name.",
+      "Keep each image focused on a line or word when possible.",
+      "PaddleOCR recognition labels can be imported and normalized into .gt.txt pairs.",
     ],
-    next: "Use this for Tesseract language or font adaptation.",
+    importResult: [
+      "Ready models should include Tesseract when .gt.txt pairs exist.",
+      "The OCR worker currently has eng and tha start models installed.",
+    ],
+    configure: [
+      "Choose the start model such as English or Thai.",
+      "Set a short output model code such as invoice_th.",
+      "Increase max iterations for harder fonts or low-quality scans.",
+    ],
+    avoid: [
+      "Do not use Tesseract for text detection boxes.",
+      "Do not use full document pages when the ground truth is line-level text.",
+    ],
   },
 ];
 
 const datasetLayouts = [
   {
-    title: "ImageFolder",
+    title: "ImageFolder classification",
     format: "imagefolder",
     rows: [
       { label: "dataset.zip", kind: "folder", depth: 0 },
@@ -170,6 +331,8 @@ const datasetLayouts = [
       { label: "dog", kind: "folder", depth: 2 },
       { label: "dog_001.jpg", kind: "image", depth: 3 },
       { label: "val", kind: "folder", depth: 1 },
+      { label: "cat", kind: "folder", depth: 2 },
+      { label: "cat_101.jpg", kind: "image", depth: 3 },
     ] satisfies TreeRow[],
   },
   {
@@ -187,7 +350,7 @@ const datasetLayouts = [
     ] satisfies TreeRow[],
   },
   {
-    title: "COCO instances",
+    title: "COCO boxes or instances",
     format: "coco_instances",
     rows: [
       { label: "dataset.zip", kind: "folder", depth: 0 },
@@ -199,7 +362,20 @@ const datasetLayouts = [
     ] satisfies TreeRow[],
   },
   {
-    title: "PaddleOCR",
+    title: "Semantic masks",
+    format: "semantic_masks",
+    rows: [
+      { label: "dataset.zip", kind: "folder", depth: 0 },
+      { label: "train", kind: "folder", depth: 1 },
+      { label: "images/image_001.jpg", kind: "image", depth: 2 },
+      { label: "masks/image_001.png", kind: "image", depth: 2 },
+      { label: "val", kind: "folder", depth: 1 },
+      { label: "images/image_101.jpg", kind: "image", depth: 2 },
+      { label: "masks/image_101.png", kind: "image", depth: 2 },
+    ] satisfies TreeRow[],
+  },
+  {
+    title: "PaddleOCR recognition/detection",
     format: "paddleocr_labels",
     rows: [
       { label: "dataset.zip", kind: "folder", depth: 0 },
@@ -210,7 +386,7 @@ const datasetLayouts = [
     ] satisfies TreeRow[],
   },
   {
-    title: "Tesseract",
+    title: "Tesseract ground truth",
     format: "tesseract_ground_truth",
     rows: [
       { label: "dataset.zip", kind: "folder", depth: 0 },
@@ -261,6 +437,68 @@ function DatasetDiagram({
   );
 }
 
+function Checklist({ items, tone = "success" }: { items: string[]; tone?: "success" | "warning" }) {
+  const Icon = tone === "warning" ? AlertCircle : CheckCircle2;
+  const color = tone === "warning" ? "text-amber-500" : "text-emerald-500";
+  return (
+    <div className="space-y-2">
+      {items.map((item) => (
+        <div className="flex items-start gap-2.5" key={item}>
+          <Icon aria-hidden="true" className={`mt-0.5 h-4 w-4 shrink-0 ${color}`} />
+          <p className="text-xs leading-5 text-muted-foreground"><I18nText textKey={item} /></p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ModelGuideCard({ guide }: { guide: ModelGuide }) {
+  const Icon = guide.icon;
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background">
+            <Icon className="h-5 w-5 text-muted-foreground" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold">{guide.title}</h2>
+            <p className="mt-1 text-xs text-muted-foreground"><I18nText textKey={guide.task} /></p>
+          </div>
+        </div>
+        <Badge variant="secondary">{guide.format}</Badge>
+      </div>
+
+      <p className="mt-4 text-sm leading-6 text-muted-foreground"><I18nText textKey={guide.useWhen} /></p>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {guide.accepted.map((item) => (
+          <StatusBadge key={item}>{item}</StatusBadge>
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Prepare</p>
+          <Checklist items={guide.prepare} />
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">After Import</p>
+          <Checklist items={guide.importResult} />
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Configure</p>
+          <Checklist items={guide.configure} />
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Avoid</p>
+          <Checklist items={guide.avoid} tone="warning" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default async function GuidePage({ searchParams }: GuidePageProps) {
   const resolvedSearchParams = await searchParams;
   const defaultTab = guideTabFromSearch(resolvedSearchParams?.tab);
@@ -271,7 +509,7 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
         <PageHeader
           eyebrow="Guide"
           title="Training Guide"
-          description="A practical map for choosing a model, preparing the right dataset format, and starting a clean training run in AILAB."
+          description={<I18nText textKey="guide.header.description" />}
           actions={
             <>
               <Button asChild variant="outline">
@@ -290,15 +528,15 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
           }
         />
 
-        <section className="grid gap-4 xl:grid-cols-[1.35fr_.65fr]">
+        <section className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BookOpenCheck className="h-5 w-5" />
-                The AILAB Training Path
+                Start Here
               </CardTitle>
               <CardDescription>
-                Follow this order when starting a new model run.
+                <I18nText textKey="guide.start.description" />
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -318,7 +556,7 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
                     </div>
                     <p className="mt-4 text-sm font-semibold">{title}</p>
                     <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                      {description}
+                      <I18nText textKey={description} />
                     </p>
                   </div>
                 ))}
@@ -328,21 +566,21 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Before You Train</CardTitle>
+              <CardTitle>Import Check</CardTitle>
               <CardDescription>
-                A quick sanity check that catches most failed jobs early.
+                <I18nText textKey="guide.import.description" />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {[
-                "Dataset format matches the selected model.",
-                "Validation files exist when the trainer expects them.",
-                "PaddleOCR checkpoint paths exist inside the OCR worker.",
-                "The selected dataset appears in Configuration.",
+                "The ZIP inspection finishes without errors.",
+                "Ready models include the model you plan to train.",
+                "Class names and annotation counts look correct.",
+                "Warnings are understood before pressing Import dataset.",
               ].map((item) => (
                 <div className="flex items-start gap-3" key={item}>
                   <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                  <p className="text-sm leading-6 text-muted-foreground">{item}</p>
+                  <p className="text-sm leading-6 text-muted-foreground"><I18nText textKey={item} /></p>
                 </div>
               ))}
             </CardContent>
@@ -351,56 +589,90 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
 
         <Tabs defaultValue={defaultTab} className="space-y-4">
           <TabsList className="h-auto flex-wrap justify-start">
-            <TabsTrigger value="models">Model guide</TabsTrigger>
-            <TabsTrigger value="datasets">Dataset layouts</TabsTrigger>
-            <TabsTrigger value="ocr">PaddleOCR tips</TabsTrigger>
+            <TabsTrigger value="workflow">Workflow</TabsTrigger>
+            <TabsTrigger value="models">Model Guide</TabsTrigger>
+            <TabsTrigger value="datasets">Dataset Layouts</TabsTrigger>
+            <TabsTrigger value="ocr">OCR Details</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="models">
-            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-              {modelGuides.map(
-                ({ checklist, format, icon: Icon, next, task, title }) => (
-                  <div
-                    key={title}
-                    className="rounded-lg border border-border bg-card p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background">
-                          <Icon className="h-5 w-5 text-muted-foreground" />
-                        </span>
-                        <div>
-                          <h2 className="text-sm font-semibold">{title}</h2>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {task}
-                          </p>
-                        </div>
+          <TabsContent value="workflow" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5" />
+                  Choose By Output
+                </CardTitle>
+                <CardDescription>
+                  <I18nText textKey="guide.workflow.description" />
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {decisionRows.map((row) => (
+                    <div
+                      key={row.need}
+                      className="rounded-lg border border-border bg-background/70 p-4"
+                    >
+                      <p className="text-sm font-semibold">{row.need}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge>{row.model}</Badge>
+                        <Badge variant="secondary">{row.dataset}</Badge>
                       </div>
-                      <Badge variant="secondary">{format}</Badge>
                     </div>
-                    <p className="mt-4 text-sm leading-6 text-muted-foreground">
-                      {next}
-                    </p>
-                    <div className="mt-4 space-y-2">
-                      {checklist.map((item) => (
-                        <div className="flex items-start gap-2.5" key={item}>
-                          <CheckCircle2
-                            aria-hidden="true"
-                            className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400"
-                          />
-                          <p className="text-xs leading-5 text-muted-foreground">
-                            {item}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ),
-              )}
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <section className="grid gap-4 lg:grid-cols-3">
+              {[
+                {
+                  title: "1. Upload ZIP",
+                  body: "Use the Dataset page. AILAB inspects the ZIP first and shows source format, task, classes, annotation counts, and ready models.",
+                  icon: Upload,
+                },
+                {
+                  title: "2. Import Dataset",
+                  body: "Press Import only after the preview looks right. AILAB keeps the original files and writes generated files under .ailab_normalized when conversion is needed.",
+                  icon: FileArchive,
+                },
+                {
+                  title: "3. Configure Run",
+                  body: "Open Configuration. Only compatible datasets appear for the chosen model. If a dataset is missing, return to Dataset and inspect the warnings.",
+                  icon: Settings2,
+                },
+              ].map(({ body, icon: Icon, title }) => (
+                <div key={title} className="rounded-lg border border-border bg-card p-4">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                  <h2 className="mt-4 text-sm font-semibold">{title}</h2>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground"><I18nText textKey={body} /></p>
+                </div>
+              ))}
+            </section>
+          </TabsContent>
+
+          <TabsContent value="models">
+            <div className="grid gap-4 xl:grid-cols-2">
+              {modelGuides.map((guide) => (
+                <ModelGuideCard key={guide.title} guide={guide} />
+              ))}
             </div>
           </TabsContent>
 
-          <TabsContent value="datasets">
+          <TabsContent value="datasets" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileArchive className="h-5 w-5" />
+                  ZIP Layouts
+                </CardTitle>
+                <CardDescription>
+                  <I18nText textKey="guide.layouts.description" />
+                </CardDescription>
+              </CardHeader>
+            </Card>
             <div className="grid gap-4 lg:grid-cols-2">
               {datasetLayouts.map((layout) => (
                 <DatasetDiagram key={layout.title} {...layout} />
@@ -408,61 +680,69 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
             </div>
           </TabsContent>
 
-          <TabsContent value="ocr">
-            <section className="grid gap-4 xl:grid-cols-[.85fr_1.15fr]">
+          <TabsContent value="ocr" className="space-y-4">
+            <section className="grid gap-4 xl:grid-cols-[.9fr_1.1fr]">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <ScanText className="h-5 w-5" />
-                    Recognition vs Detection
+                    PaddleOCR
                   </CardTitle>
                   <CardDescription>
-                    Pick the PaddleOCR recipe by the kind of label file you have.
+                    <I18nText textKey="guide.paddle.description" />
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="rounded-lg border border-border bg-background/70 p-4">
                     <StatusBadge tone="success">Recognition</StatusBadge>
                     <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                      Use `rec_gt_train.txt` when each image is already cropped
-                      to a word or text line.
+                      <I18nText textKey="Use `rec_gt_train.txt` when each image is already cropped to one word or one text line." />
                     </p>
                   </div>
                   <div className="rounded-lg border border-border bg-background/70 p-4">
                     <StatusBadge tone="warning">Detection</StatusBadge>
                     <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                      Use `det_gt_train.txt` when the model must learn where
-                      text appears in the full image.
+                      <I18nText textKey="Use `det_gt_train.txt` when the model must learn where text appears in full images." />
                     </p>
                   </div>
+                  <Checklist
+                    items={[
+                      "Use preset configs first; custom paths are for advanced/admin use.",
+                      "Choose Previous run only when reusing an AILAB OCR checkpoint.",
+                      "Tesseract .gt.txt recognition data can be imported for PaddleOCR recognition.",
+                    ]}
+                  />
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Settings2 className="h-5 w-5" />
-                    Checkpoint Paths
+                    <FileText className="h-5 w-5" />
+                    Tesseract
                   </CardTitle>
                   <CardDescription>
-                    The Configuration page now has helpers so users do not need
-                    to type long PaddleOCR paths from memory.
+                    <I18nText textKey="guide.tesseract.description" />
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-2">
                     {[
                       {
-                        title: "None",
-                        body: "No override is sent; the selected config decides.",
+                        title: "Start model",
+                        body: "Choose English or Thai from the Tesseract start-model selector.",
                       },
                       {
-                        title: "Previous run",
-                        body: "Type only the AILAB run folder and the path is built.",
+                        title: "Ground truth",
+                        body: "Each image must have a same-name .gt.txt transcript file.",
                       },
                       {
-                        title: "Custom",
-                        body: "Paste a full path only when the checkpoint is elsewhere.",
+                        title: "Output code",
+                        body: "Use a short model code, for example invoice_th or shop_sign_en.",
+                      },
+                      {
+                        title: "Iterations",
+                        body: "Increase max iterations when fonts, scans, or language are harder.",
                       },
                     ].map((item) => (
                       <div
@@ -471,7 +751,7 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
                       >
                         <p className="text-sm font-semibold">{item.title}</p>
                         <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                          {item.body}
+                          <I18nText textKey={item.body} />
                         </p>
                       </div>
                     ))}
@@ -479,11 +759,12 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
                   <div className="rounded-lg border border-dashed border-border bg-background/70 p-4">
                     <div className="flex items-center gap-2">
                       <FileArchive className="h-4 w-4 text-muted-foreground" />
-                      <p className="text-sm font-medium">Generated path example</p>
+                      <p className="text-sm font-medium">Installed start models</p>
                     </div>
-                    <p className="mt-3 break-all font-mono text-xs text-muted-foreground">
-                      /app/runs/previous_ocr_run_1710000000000/best_accuracy
-                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Badge>eng</Badge>
+                      <Badge>tha</Badge>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

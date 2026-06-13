@@ -7,28 +7,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { type OcrBaseModelPreset } from "@/lib/cvCatalog";
 import { type ConfigValue } from "@/lib/useTrainingConfig";
+import { useLanguage } from "@/components/language-provider";
 
-const paddleRecipes = [
+const fallbackPaddlePresets: OcrBaseModelPreset[] = [
   {
-    id: "rec",
-    label: "Text recognition",
+    id: "ppocrv4-rec",
+    label: "PP-OCRv4 Recognition",
     task: "rec",
-    configPath: "/opt/PaddleOCR/configs/rec/PP-OCRv4/ch_PP-OCRv4_rec.yml",
+    config_path: "/opt/PaddleOCR/configs/rec/PP-OCRv4/ch_PP-OCRv4_rec.yml",
+    pretrained_model: "",
     labels: ["rec_gt_train.txt", "rec_gt_val.txt"],
-    description: "Use this when each cropped text image has one transcript.",
+    description: "General text recognition using the selected PaddleOCR config default weights.",
+    available: true,
   },
   {
-    id: "det",
-    label: "Text detection",
+    id: "ppocrv4-det",
+    label: "PP-OCRv4 Detection",
     task: "det",
-    configPath: "/opt/PaddleOCR/configs/det/ch_PP-OCRv4/ch_PP-OCRv4_det.yml",
+    config_path: "/opt/PaddleOCR/configs/det/ch_PP-OCRv4/ch_PP-OCRv4_det.yml",
+    pretrained_model: "",
     labels: ["det_gt_train.txt", "det_gt_val.txt"],
-    description: "Use this when labels mark text boxes or polygons.",
+    description: "General text detection using the selected PaddleOCR config default weights.",
+    available: true,
   },
-] as const;
+];
 
-type RecipeId = (typeof paddleRecipes)[number]["id"] | "custom";
 type CheckpointMode = "none" | "previous-run" | "custom";
 
 function previousRunPath(runFolder: string) {
@@ -41,9 +46,13 @@ function folderFromPreviousRunPath(path: string) {
   return match?.[1] ?? "";
 }
 
-function recipeFromConfig(configPath: string, ocrTask: string): RecipeId {
-  const exactConfigMatch = paddleRecipes.find(
-    (recipe) => recipe.configPath === configPath,
+function recipeFromConfig(
+  presets: OcrBaseModelPreset[],
+  configPath: string,
+  ocrTask: string,
+) {
+  const exactConfigMatch = presets.find(
+    (preset) => preset.config_path === configPath,
   );
   if (exactConfigMatch) {
     return exactConfigMatch.id;
@@ -51,7 +60,7 @@ function recipeFromConfig(configPath: string, ocrTask: string): RecipeId {
   if (configPath.trim()) {
     return "custom";
   }
-  const taskMatch = paddleRecipes.find((recipe) => recipe.task === ocrTask);
+  const taskMatch = presets.find((preset) => preset.task === ocrTask);
   return taskMatch?.id ?? "custom";
 }
 
@@ -62,20 +71,27 @@ function checkpointModeFromPath(path: string): CheckpointMode {
 
 export function PaddleOcrSetup({
   params,
+  presets,
   onParamChange,
 }: {
   params: Record<string, ConfigValue>;
+  presets?: OcrBaseModelPreset[];
   onParamChange: (key: string, value: ConfigValue) => void;
 }) {
+  const { t } = useLanguage();
+  const paddlePresets = useMemo(
+    () => (presets?.length ? presets : fallbackPaddlePresets),
+    [presets],
+  );
   const configPath = String(params.config_path ?? "");
   const pretrainedModel = String(params.pretrained_model ?? "");
   const ocrTask = String(params.ocr_task ?? "rec");
   const activeRecipe = useMemo(
-    () => recipeFromConfig(configPath, ocrTask),
-    [configPath, ocrTask],
+    () => recipeFromConfig(paddlePresets, configPath, ocrTask),
+    [configPath, ocrTask, paddlePresets],
   );
   const activeLabels =
-    paddleRecipes.find((recipe) => recipe.id === activeRecipe)?.labels ??
+    paddlePresets.find((preset) => preset.id === activeRecipe)?.labels ??
     (ocrTask === "det"
       ? ["det_gt_train.txt", "det_gt_val.txt"]
       : ["rec_gt_train.txt", "rec_gt_val.txt"]);
@@ -92,12 +108,14 @@ export function PaddleOcrSetup({
     setPreviousRunFolder(folderFromPreviousRunPath(pretrainedModel));
   }, [pretrainedModel]);
 
-  const selectRecipe = (recipeId: RecipeId) => {
-    if (recipeId === "custom") return;
-    const recipe = paddleRecipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
-    onParamChange("ocr_task", recipe.task);
-    onParamChange("config_path", recipe.configPath);
+  const selectRecipe = (presetId: string) => {
+    const preset = paddlePresets.find((item) => item.id === presetId);
+    if (!preset || preset.available === false) return;
+    if (preset.task) onParamChange("ocr_task", preset.task);
+    if (preset.config_path) onParamChange("config_path", preset.config_path);
+    if (preset.pretrained_model) {
+      onParamChange("pretrained_model", preset.pretrained_model);
+    }
   };
 
   const selectCheckpointMode = (mode: CheckpointMode) => {
@@ -122,25 +140,26 @@ export function PaddleOcrSetup({
         <div>
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">PaddleOCR setup</h3>
+            <h3 className="text-sm font-semibold">PaddleOCR base model</h3>
           </div>
           <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
-            Pick a recipe first. AILAB will fill the PaddleOCR config path and
-            keep the expected label filenames visible before you train.
+            {t("ocr.paddle.helper")}
           </p>
         </div>
-        <StatusBadge tone="neutral">OCR helper</StatusBadge>
+        <StatusBadge tone="neutral">Preset catalog</StatusBadge>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        {paddleRecipes.map((recipe) => {
-          const active = activeRecipe === recipe.id;
+        {paddlePresets.map((preset) => {
+          const active = activeRecipe === preset.id;
+          const unavailable = preset.available === false;
           return (
             <button
-              key={recipe.id}
+              key={preset.id}
               type="button"
-              onClick={() => selectRecipe(recipe.id)}
-              className={`rounded-lg border p-3 text-left transition-colors ${
+              disabled={unavailable}
+              onClick={() => selectRecipe(preset.id)}
+              className={`rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                 active
                   ? "border-foreground bg-foreground text-background"
                   : "border-border bg-background hover:bg-accent"
@@ -148,23 +167,26 @@ export function PaddleOcrSetup({
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold">{recipe.label}</p>
-                  <p
-                    className={`mt-1 text-xs leading-5 ${
-                      active ? "text-background/70" : "text-muted-foreground"
-                    }`}
-                  >
-                    {recipe.description}
-                  </p>
+                  <p className="text-sm font-semibold">{preset.label}</p>
+                  {preset.description && (
+                    <p
+                      className={`mt-1 text-xs leading-5 ${
+                        active ? "text-background/70" : "text-muted-foreground"
+                      }`}
+                    >
+                      {preset.description}
+                    </p>
+                  )}
                 </div>
                 {active && <CheckCircle2 className="h-4 w-4 shrink-0" />}
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {recipe.labels.map((label) => (
+                {(preset.labels ?? []).map((label) => (
                   <Badge key={label} variant={active ? "outline" : "secondary"}>
                     {label}
                   </Badge>
                 ))}
+                {unavailable && <Badge variant="secondary">Admin install required</Badge>}
               </div>
             </button>
           );
@@ -180,16 +202,15 @@ export function PaddleOcrSetup({
             placeholder="/opt/PaddleOCR/configs/rec/PP-OCRv4/ch_PP-OCRv4_rec.yml"
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            Use the preset value unless you have a custom config inside the OCR
-            worker image.
+            {t("ocr.paddle.configHelper")}
           </p>
         </div>
 
         <div className="space-y-3">
-          <Label>Fine-tune from checkpoint</Label>
+          <Label>Fine-tune checkpoint</Label>
           <div className="grid gap-2 sm:grid-cols-3">
             {[
-              { id: "none", label: "None" },
+              { id: "none", label: "Config default" },
               { id: "previous-run", label: "Previous run" },
               { id: "custom", label: "Custom path" },
             ].map((option) => (
@@ -213,7 +234,7 @@ export function PaddleOcrSetup({
                 placeholder="previous_ocr_run_1710000000000"
               />
               <p className="text-xs leading-5 text-muted-foreground">
-                AILAB will send{" "}
+                {t("ocr.paddle.previousRunHelper")}{" "}
                 <span className="font-mono text-foreground">
                   /app/runs/{previousRunFolder || "<run-folder>"}/best_accuracy
                 </span>
@@ -231,15 +252,14 @@ export function PaddleOcrSetup({
                 placeholder="/app/runs/my_ocr_run/best_accuracy"
               />
               <p className="text-xs leading-5 text-muted-foreground">
-                The path must exist inside the OCR worker container.
+                {t("ocr.paddle.customPathHelper")}
               </p>
             </div>
           )}
 
           {checkpointMode === "none" && (
             <p className="text-xs leading-5 text-muted-foreground">
-              No pretrained override will be sent. PaddleOCR will use whatever
-              the selected config defines.
+              {t("ocr.paddle.noneHelper")}
             </p>
           )}
         </div>

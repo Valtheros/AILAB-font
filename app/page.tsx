@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import {
   ArrowRight,
@@ -11,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageToggle } from "@/components/language-toggle";
+import { useLanguage } from "@/components/language-provider";
 
 const taskFamilies = [
   { label: "Image Classification", detail: "ResNet and EfficientNet", icon: Cpu },
@@ -28,6 +32,8 @@ const taskFamilies = [
 ];
 
 export default function HomePage() {
+  const { t } = useLanguage();
+
   return (
     <main className="min-h-screen overflow-hidden bg-background text-foreground">
       <header className="mx-auto flex max-w-7xl items-center justify-between px-4 py-5 md:px-8">
@@ -38,11 +44,14 @@ export default function HomePage() {
           <span>
             <span className="block text-sm font-semibold">AILAB</span>
             <span className="block text-xs text-muted-foreground">
-              No-code CV training
+              {t("common.noCodeTraining")}
             </span>
           </span>
         </Link>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <LanguageToggle />
+          <ThemeToggle />
+        </div>
       </header>
 
       <section className="mx-auto grid min-h-[calc(100vh-5.5rem)] max-w-7xl items-center gap-8 px-4 pb-10 md:px-8 lg:grid-cols-[1.03fr_.97fr]">
@@ -54,8 +63,7 @@ export default function HomePage() {
             Train vision models from dataset to artifact.
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
-            Configure model-specific parameters, monitor runs, and collect output
-            files for classification, segmentation, OCR, and detection.
+            {t("home.hero.description")}
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Button asChild>

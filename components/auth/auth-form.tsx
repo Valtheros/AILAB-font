@@ -15,6 +15,7 @@ import {
 import { FieldError } from "@/components/auth/field-error";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLanguage } from "@/components/language-provider";
 import { authClient } from "@/lib/auth-client";
 import {
   authEmailSchema,
@@ -60,6 +61,7 @@ function isEmailNotVerifiedError(error: AuthClientError | null | undefined) {
 export function AuthForm({ mode }: { mode: AuthMode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useLanguage();
   const callbackURL = useMemo(
     () => safeCallbackURL(searchParams.get("callbackURL")),
     [searchParams]
@@ -293,8 +295,8 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         <CardTitle>{isSignup ? "Create account" : "Sign in"}</CardTitle>
         <CardDescription>
           {isSignup
-            ? "Create a workspace identity for datasets, runs, logs, and artifacts."
-            : "Open your training workspace and reconnect to previous work."}
+            ? t("auth.form.signupDescription")
+            : t("auth.form.loginDescription")}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -486,7 +488,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
           </form>
         )}
         <p className="mt-5 text-sm text-muted-foreground">
-          {isSignup ? "Already have an account?" : "New to AILAB?"}{" "}
+          {isSignup ? t("auth.form.existingAccount") : t("auth.form.newAccount")}{" "}
           <Link
             className="font-medium text-foreground underline-offset-4 hover:underline"
             href={`${isSignup ? "/login" : "/signup"}?callbackURL=${encodeURIComponent(callbackURL)}`}

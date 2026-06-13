@@ -31,6 +31,43 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiBaseUrl, parseJsonText } from "@/lib/api";
+import { useLanguage } from "@/components/language-provider";
+
+interface CompatibleModel {
+  id: string;
+  label: string;
+  task: string;
+  ready: boolean;
+  reason: string;
+}
+
+interface AnnotationStats {
+  images?: number;
+  classes?: number;
+  yolo_boxes?: number;
+  yolo_polygons?: number;
+  coco_boxes?: number;
+  coco_masks?: number;
+  semantic_masks?: number;
+  paddleocr_tasks?: string[];
+  tesseract_pairs?: number;
+}
+
+interface ImportProfile {
+  tasks: string[];
+  formats: string[];
+  classes: string[];
+  image_count: number;
+  source_format: string;
+  canonical_task: string;
+  normalized_formats: string[];
+  annotation_stats: AnnotationStats;
+  conversion_warnings?: string[];
+  warnings?: string[];
+  errors?: string[];
+  ready_models?: CompatibleModel[];
+  compatible_models?: CompatibleModel[];
+}
 
 interface Dataset {
   id: string;
@@ -42,11 +79,18 @@ interface Dataset {
   tasks: string[];
   formats: string[];
   warnings?: string[];
+  sourceFormat?: string;
+  canonicalTask?: string;
+  normalizedFormats?: string[];
+  annotationStats?: AnnotationStats;
+  conversionWarnings?: string[];
+  readyModels?: CompatibleModel[];
 }
 
 const API_URL = apiBaseUrl();
 
 export default function DatasetPage() {
+  const { t } = useLanguage();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -55,6 +99,8 @@ export default function DatasetPage() {
     "idle" | "uploading" | "success" | "error"
   >("idle");
   const [uploadMessage, setUploadMessage] = useState("");
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<{ datasetName: string; profile: ImportProfile } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [deleteError, setDeleteError] = useState("");
@@ -75,7 +121,7 @@ export default function DatasetPage() {
       console.error("Failed to fetch datasets:", error);
       setDatasets([]);
       setLoadError(
-        "Dataset service unavailable. Start the backend and refresh this page.",
+        `Dataset service unavailable. ${t("common.backendReachable")}`,
       );
     } finally {
       setIsLoading(false);
@@ -86,74 +132,102 @@ export default function DatasetPage() {
     fetchDatasets();
   }, [fetchDatasets]);
 
-  const uploadFile = async (file: File) => {
+  const sendDatasetZip = async <T,>(file: File, endpoint: string, failureLabel: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const xhr = new XMLHttpRequest();
+
+    return new Promise<T>((resolve, reject) => {
+      xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable) {
+          setUploadProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      });
+      xhr.addEventListener("load", () => {
+        try {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(parseJsonText(xhr.responseText, `${failureLabel} returned an invalid response`));
+          } else {
+            const data = parseJsonText<{ detail?: string }>(
+              xhr.responseText || "{}",
+              `${failureLabel} failed with status ${xhr.status}`,
+            );
+            reject(new Error(data.detail || `${failureLabel} failed with status ${xhr.status}`));
+          }
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
+      xhr.addEventListener("error", () => reject(new Error("Network error")));
+      xhr.open("POST", `${API_URL}${endpoint}`);
+      xhr.send(formData);
+    });
+  };
+
+  const inspectFile = async (file: File) => {
     if (!file.name.toLowerCase().endsWith(".zip")) {
       setUploadStatus("error");
       setUploadMessage("Please upload a .zip dataset.");
       return;
     }
 
+    setPendingFile(file);
+    setImportPreview(null);
     setIsUploading(true);
     setUploadStatus("uploading");
     setUploadProgress(0);
-    setUploadMessage(`Uploading ${file.name}...`);
+    setUploadMessage(`Inspecting ${file.name}...`);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const xhr = new XMLHttpRequest();
+      const result = await sendDatasetZip<{ dataset_name: string; profile: ImportProfile }>(
+        file,
+        "/api/datasets/inspect-upload",
+        "Dataset inspection",
+      );
+      setImportPreview({ datasetName: result.dataset_name, profile: result.profile });
+      setUploadStatus("success");
+      setUploadProgress(100);
+      setUploadMessage(`${result.dataset_name} is ready to import.`);
+    } catch (error) {
+      setPendingFile(null);
+      setUploadStatus("error");
+      setUploadMessage(error instanceof Error ? error.message : "Inspection failed");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
-      const result = await new Promise<{
-        dataset_name: string;
-        tasks?: string[];
-        formats?: string[];
-      }>((resolve, reject) => {
-        xhr.upload.addEventListener("progress", (event) => {
-          if (event.lengthComputable) {
-            setUploadProgress(Math.round((event.loaded / event.total) * 100));
-          }
-        });
-        xhr.addEventListener("load", () => {
-          try {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              resolve(parseJsonText(xhr.responseText, "Upload returned an invalid response"));
-            } else {
-              const data = parseJsonText<{ detail?: string }>(
-                xhr.responseText || "{}",
-                `Upload failed with status ${xhr.status}`,
-              );
-              reject(new Error(data.detail || `Upload failed with status ${xhr.status}`));
-            }
-          } catch (error) {
-            reject(error instanceof Error ? error : new Error(String(error)));
-          }
-        });
-        xhr.addEventListener("error", () => reject(new Error("Network error")));
-        xhr.open("POST", `${API_URL}/api/upload-dataset`);
-        xhr.send(formData);
-      });
+  const importFile = async () => {
+    if (!pendingFile) return;
+    setIsUploading(true);
+    setUploadStatus("uploading");
+    setUploadProgress(0);
+    setUploadMessage(`Importing ${pendingFile.name}...`);
 
+    try {
+      const result = await sendDatasetZip<{ dataset_name: string; tasks?: string[] }>(
+        pendingFile,
+        "/api/datasets/import",
+        "Dataset import",
+      );
       setUploadStatus("success");
       setUploadProgress(100);
       setUploadMessage(
-        `${result.dataset_name} uploaded. Detected: ${(result.tasks ?? []).join(", ") || "dataset"}`,
+        `${result.dataset_name} imported. Detected: ${(result.tasks ?? []).join(", ") || "dataset"}`,
       );
+      setPendingFile(null);
+      setImportPreview(null);
       await fetchDatasets();
       setTimeout(() => {
         setUploadStatus("idle");
         setUploadMessage("");
-        setIsUploading(false);
         setUploadProgress(0);
       }, 2600);
     } catch (error) {
       setUploadStatus("error");
-      setUploadMessage(error instanceof Error ? error.message : "Upload failed");
+      setUploadMessage(error instanceof Error ? error.message : "Import failed");
+    } finally {
       setIsUploading(false);
-      setTimeout(() => {
-        setUploadStatus("idle");
-        setUploadMessage("");
-        setUploadProgress(0);
-      }, 4500);
     }
   };
 
@@ -181,7 +255,7 @@ export default function DatasetPage() {
         <PageHeader
           eyebrow="Data"
           title="Dataset Management"
-          description="Upload ZIP datasets, inspect detected formats, and keep training inputs compatible with the selected model."
+          description={t("dataset.header.description")}
           actions={
             <>
               <Button asChild variant="outline">
@@ -212,8 +286,7 @@ export default function DatasetPage() {
                 Upload Dataset
               </CardTitle>
               <CardDescription>
-                Supported: YOLO detection, ImageFolder classification, semantic
-                masks, COCO instances, PaddleOCR labels, and Tesseract ground truth.
+                {t("dataset.upload.description")}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -224,7 +297,7 @@ export default function DatasetPage() {
                 className="hidden"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
-                  if (file) uploadFile(file);
+                  if (file) inspectFile(file);
                   if (fileInputRef.current) fileInputRef.current.value = "";
                 }}
               />
@@ -238,7 +311,7 @@ export default function DatasetPage() {
                   event.preventDefault();
                   setIsDragging(false);
                   const file = event.dataTransfer.files?.[0];
-                  if (file) uploadFile(file);
+                  if (file) inspectFile(file);
                 }}
                 onClick={() => !isUploading && fileInputRef.current?.click()}
                 className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition-colors sm:p-10 ${
@@ -251,7 +324,7 @@ export default function DatasetPage() {
                   {uploadStatus === "uploading" ? (
                     <>
                       <Archive className="mb-4 h-10 w-10 animate-pulse text-muted-foreground" />
-                      <StatusBadge tone="warning">Uploading</StatusBadge>
+                      <StatusBadge tone="warning">Working</StatusBadge>
                       <p className="mt-3 font-medium">{uploadMessage}</p>
                       <div className="mt-4 w-full max-w-sm">
                         <Progress value={uploadProgress} className="h-2" />
@@ -263,7 +336,7 @@ export default function DatasetPage() {
                   ) : uploadStatus === "success" ? (
                     <>
                       <CheckCircle2 className="mb-4 h-10 w-10 text-emerald-500" />
-                      <StatusBadge tone="success">Upload complete</StatusBadge>
+                      <StatusBadge tone="success">Ready</StatusBadge>
                       <p className="mt-3 max-w-lg font-medium">{uploadMessage}</p>
                     </>
                   ) : uploadStatus === "error" ? (
@@ -277,7 +350,7 @@ export default function DatasetPage() {
                       <Upload className="mb-4 h-10 w-10 text-muted-foreground" />
                       <p className="font-medium">Drop a dataset ZIP here</p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        or click to select a file
+                        {t("dataset.drop.hint")}
                       </p>
                       <Button
                         variant="outline"
@@ -300,25 +373,89 @@ export default function DatasetPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Detection Notes</CardTitle>
+              <CardTitle>Import Preview</CardTitle>
               <CardDescription>
-                Metadata appears after the backend inspects the archive.
+                {importPreview ? importPreview.datasetName : t("dataset.preview.empty")}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                "Detected task families are surfaced as status chips.",
-                "Formats gate compatible model choices in configuration.",
-                "Classes and warnings stay attached to each dataset row.",
-              ].map((note) => (
-                <div
-                  className="flex gap-3 rounded-lg border border-border bg-background/70 p-3"
-                  key={note}
-                >
-                  <FileArchive className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <p className="text-sm leading-6 text-muted-foreground">{note}</p>
-                </div>
-              ))}
+            <CardContent className="space-y-4">
+              {importPreview ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-border bg-background/70 p-3">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">Source</p>
+                      <p className="mt-1 text-sm font-semibold">{importPreview.profile.source_format}</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background/70 p-3">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">Task</p>
+                      <p className="mt-1 text-sm font-semibold">{importPreview.profile.canonical_task}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {importPreview.profile.normalized_formats.map((format) => (
+                      <Badge key={format} variant="secondary">
+                        {format}
+                      </Badge>
+                    ))}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <StatusBadge>{importPreview.profile.image_count.toLocaleString()} images</StatusBadge>
+                    <StatusBadge>{importPreview.profile.classes.length} classes</StatusBadge>
+                    <StatusBadge>{importPreview.profile.ready_models?.length ?? 0} ready models</StatusBadge>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Compatible models</p>
+                    <div className="flex flex-wrap gap-2">
+                      {(importPreview.profile.ready_models ?? []).map((model) => (
+                        <Badge key={`${model.task}-${model.id}`}>{model.label}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                  {(importPreview.profile.conversion_warnings ?? []).length > 0 && (
+                    <div className="space-y-2">
+                      {(importPreview.profile.conversion_warnings ?? []).slice(0, 3).map((warning) => (
+                        <StatusBadge key={warning} tone="warning">
+                          {warning}
+                        </StatusBadge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={importFile} disabled={isUploading || !pendingFile}>
+                      <Upload className="h-4 w-4" />
+                      Import dataset
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setPendingFile(null);
+                        setImportPreview(null);
+                        setUploadStatus("idle");
+                        setUploadMessage("");
+                        setUploadProgress(0);
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {[
+                    t("dataset.preview.note.inspect"),
+                    t("dataset.preview.note.coco"),
+                    t("dataset.preview.note.ocr"),
+                  ].map((note) => (
+                    <div
+                      className="flex gap-3 rounded-lg border border-border bg-background/70 p-3"
+                      key={note}
+                    >
+                      <FileArchive className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <p className="text-sm leading-6 text-muted-foreground">{note}</p>
+                    </div>
+                  ))}
+                </>
+              )}
             </CardContent>
           </Card>
         </section>
@@ -327,7 +464,9 @@ export default function DatasetPage() {
           <CardHeader>
             <CardTitle>Dataset Inventory</CardTitle>
             <CardDescription>
-              {isLoading ? "Loading datasets..." : `${datasets.length} datasets available`}
+              {isLoading
+                ? t("dataset.inventory.loading")
+                : `${datasets.length} ${t("dataset.inventory.available")}`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -335,7 +474,7 @@ export default function DatasetPage() {
               <EmptyState
                 icon={RefreshCw}
                 title="Loading datasets"
-                description="Waiting for the backend inventory response."
+                description={t("common.loadingBackendInventory")}
               />
             ) : loadError ? (
               <EmptyState
@@ -352,7 +491,7 @@ export default function DatasetPage() {
               <EmptyState
                 icon={ImageIcon}
                 title="No datasets yet"
-                description="Upload a ZIP archive to make it available for model configuration."
+                description={t("dataset.empty.description")}
               />
             ) : (
               <div className="space-y-3">
@@ -388,6 +527,24 @@ export default function DatasetPage() {
                             </Badge>
                           ))}
                         </div>
+                        {(dataset.readyModels?.length ?? 0) > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {dataset.readyModels?.slice(0, 6).map((model) => (
+                              <Badge key={`${dataset.id}-${model.task}-${model.id}`}>
+                                {model.label}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        {(dataset.conversionWarnings?.length ?? 0) > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {dataset.conversionWarnings?.slice(0, 2).map((warning) => (
+                              <StatusBadge key={warning} tone="warning">
+                                {warning}
+                              </StatusBadge>
+                            ))}
+                          </div>
+                        )}
                         {dataset.classes?.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-1.5">
                             {dataset.classes.slice(0, 10).map((className) => (

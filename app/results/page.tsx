@@ -16,6 +16,7 @@ import { StatusBadge } from "@/components/workspace/status-badge";
 import { Download, FileText, History, RefreshCw, Trash2, Trophy, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
+import { useLanguage } from "@/components/language-provider";
 
 const API_URL = apiBaseUrl();
 
@@ -49,6 +50,7 @@ function formatDate(timestamp: number) {
 }
 
 export default function ResultsPage() {
+  const { t } = useLanguage();
   const [runs, setRuns] = useState<TrainingRun[]>([]);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -136,7 +138,7 @@ export default function ResultsPage() {
         <PageHeader
           eyebrow="Workspace"
           title="Results"
-          description="Browse completed run folders, inspect the latest metrics, and collect the artifacts written by the backend."
+          description={t("results.header.description")}
           actions={
             <Button variant="outline" onClick={fetchRuns} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -149,7 +151,7 @@ export default function ResultsPage() {
           <EmptyState
             icon={RefreshCw}
             title="Loading run history"
-            description="Reading backend run folders and the latest metric snapshots."
+            description={t("results.loading.description")}
           />
         ) : loadError ? (
           <EmptyState
@@ -167,7 +169,7 @@ export default function ResultsPage() {
           <EmptyState
             icon={Trophy}
             title="No training results yet"
-            description="Completed training runs will appear here with metrics and downloadable artifacts."
+            description={t("results.empty.description")}
           />
         ) : (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
@@ -287,7 +289,7 @@ export default function ResultsPage() {
                   <CardHeader>
                     <CardTitle>Latest Metrics</CardTitle>
                     <CardDescription>
-                      Last row from `results.csv`, when available.
+                      {t("results.metrics.description")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -311,7 +313,7 @@ export default function ResultsPage() {
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground">
-                        No metrics file found.
+                        {t("results.noMetrics")}
                       </p>
                     )}
                   </CardContent>
@@ -353,7 +355,7 @@ export default function ResultsPage() {
                       ))}
                       {downloadableFiles?.length === 0 && (
                         <p className="text-sm text-muted-foreground">
-                          No downloadable artifacts found.
+                          {t("results.noArtifacts")}
                         </p>
                       )}
                     </div>

@@ -24,35 +24,36 @@ import {
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { useLanguage } from "@/components/language-provider";
 
 const quickActions = [
   {
     title: "Upload dataset",
-    description: "Bring ZIP datasets into the workspace.",
+    descriptionKey: "dashboard.action.upload.description",
     href: "/dataset",
     icon: Database,
   },
   {
     title: "Read guide",
-    description: "See model choices and dataset layouts.",
+    descriptionKey: "dashboard.action.guide.description",
     href: "/guide",
     icon: BookOpenCheck,
   },
   {
     title: "Configure run",
-    description: "Choose tasks, models, and parameters.",
+    descriptionKey: "dashboard.action.config.description",
     href: "/config",
     icon: FileSliders,
   },
   {
     title: "Open monitor",
-    description: "Start or inspect a training job.",
+    descriptionKey: "dashboard.action.monitor.description",
     href: "/training",
     icon: Play,
   },
   {
     title: "Browse results",
-    description: "Download metrics and artifacts.",
+    descriptionKey: "dashboard.action.results.description",
     href: "/results",
     icon: Download,
   },
@@ -61,22 +62,22 @@ const quickActions = [
 const workflowStages = [
   {
     title: "Dataset",
-    description: "Detect formats, classes, and task compatibility.",
+    descriptionKey: "dashboard.stage.dataset.description",
     icon: Database,
   },
   {
     title: "Configure",
-    description: "Tune shared settings and model-specific parameters.",
+    descriptionKey: "dashboard.stage.configure.description",
     icon: FileSliders,
   },
   {
     title: "Train",
-    description: "Watch job state, logs, progress, and metrics.",
+    descriptionKey: "dashboard.stage.train.description",
     icon: Activity,
   },
   {
     title: "Artifact",
-    description: "Collect weights, reports, and OCR outputs.",
+    descriptionKey: "dashboard.stage.artifact.description",
     icon: Layers3,
   },
 ];
@@ -89,13 +90,15 @@ const taskFamilies = [
 ];
 
 export default function DashboardPage() {
+  const { t } = useLanguage();
+
   return (
     <MainLayout>
       <div className="space-y-6">
         <PageHeader
           eyebrow="Workspace"
           title="Dashboard"
-          description="Move from datasets to artifacts with one workspace for Computer Vision training."
+          description={t("dashboard.header.description")}
           actions={
             <Button asChild>
               <Link href="/config">
@@ -114,14 +117,13 @@ export default function DashboardPage() {
               </div>
               <CardTitle>Training Workspace</CardTitle>
               <CardDescription>
-                A compact run path for classification, segmentation, OCR, and
-                object detection.
+                {t("dashboard.workspace.description")}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 md:grid-cols-4">
                 {workflowStages.map(
-                  ({ description, icon: Icon, title }, index) => (
+                  ({ descriptionKey, icon: Icon, title }, index) => (
                     <div
                       className="rounded-lg border border-border bg-background/70 p-4"
                       key={title}
@@ -136,7 +138,7 @@ export default function DashboardPage() {
                       </div>
                       <h2 className="mt-5 text-sm font-semibold">{title}</h2>
                       <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                        {description}
+                        {t(descriptionKey)}
                       </p>
                     </div>
                   ),
@@ -149,7 +151,7 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle>Workspace Status</CardTitle>
               <CardDescription>
-                Stable signals for the current frontend workflow.
+                {t("dashboard.status.description")}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -172,11 +174,11 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>
-              Jump into the page that owns each part of the workflow.
+              {t("dashboard.quick.description")}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {quickActions.map(({ description, href, icon: Icon, title }) => (
+            {quickActions.map(({ descriptionKey, href, icon: Icon, title }) => (
               <Link
                 className="group rounded-lg border border-border bg-background/70 p-4 transition-colors hover:bg-accent"
                 href={href}
@@ -190,7 +192,7 @@ export default function DashboardPage() {
                 </div>
                 <h2 className="mt-6 text-sm font-semibold">{title}</h2>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  {description}
+                  {t(descriptionKey)}
                 </p>
               </Link>
             ))}

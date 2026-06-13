@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLanguage } from "@/components/language-provider";
 import { authClient } from "@/lib/auth-client";
 import {
   authEmailSchema,
@@ -120,6 +121,7 @@ async function requestResetEmail(email: string) {
 
 export function ForgotPasswordForm() {
   const searchParams = useSearchParams();
+  const { t } = useLanguage();
   const queryEmail = useMemo(
     () => initialEmail(searchParams.get("email")),
     [searchParams]
@@ -370,7 +372,7 @@ export function ForgotPasswordForm() {
       <CardHeader>
         <CardTitle>Reset password</CardTitle>
         <CardDescription>
-          Verify your email with a one-time code before setting a new password.
+          {t("auth.forgot.formDescription")}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -643,7 +645,7 @@ export function ForgotPasswordForm() {
         )}
 
         <p className="mt-5 text-sm text-muted-foreground">
-          Remember your password?{" "}
+          {t("auth.forgot.rememberPassword")}{" "}
           <Link
             className="font-medium text-foreground underline-offset-4 hover:underline"
             href="/login"

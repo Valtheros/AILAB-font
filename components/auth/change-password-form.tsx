@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLanguage } from "@/components/language-provider";
 import { Switch } from "@/components/ui/switch";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -39,6 +40,7 @@ const fieldErrorIds: Record<ChangePasswordField, string> = {
 
 export function ChangePasswordForm() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -185,7 +187,7 @@ export function ChangePasswordForm() {
           Change password
         </CardTitle>
         <CardDescription>
-          Update the password used for email and password sign-in.
+          {t("auth.changePassword.description")}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -306,7 +308,7 @@ export function ChangePasswordForm() {
             <div className="pr-4">
               <Label htmlFor="revokeOtherSessions">Sign out other sessions</Label>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Keep this on after a password change.
+                {t("auth.changePassword.revokeHelper")}
               </p>
             </div>
             <Switch

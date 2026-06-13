@@ -42,6 +42,7 @@ import {
 import { type CVCatalog, fallbackCatalog, getModel, getTask } from "@/lib/cvCatalog";
 import { apiBaseUrl, projectSlug } from "@/lib/api";
 import { useTrainingConfig } from "@/lib/useTrainingConfig";
+import { useLanguage } from "@/components/language-provider";
 
 const API_URL = apiBaseUrl();
 const ACTIVE_JOB_KEY = "ailab-active-job";
@@ -82,6 +83,7 @@ function statusTone(value: string): StatusTone {
 }
 
 export default function TrainingPage() {
+  const { t } = useLanguage();
   const { config, deviceSelection, updateConfig } = useTrainingConfig();
   const [isTraining, setIsTraining] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -343,7 +345,7 @@ export default function TrainingPage() {
         <PageHeader
           eyebrow="Workspace"
           title="Training Monitor"
-          description="Review the queued payload, start a CV training run, and watch metrics and worker logs without leaving the workspace."
+          description={t("training.header.description")}
           actions={
             <>
               {!isTraining && (
@@ -374,7 +376,7 @@ export default function TrainingPage() {
                     Run Payload
                   </CardTitle>
                   <CardDescription className="mt-2">
-                    The draft below is sent through the current `/api/train` contract.
+                    {t("training.payload.description")}
                   </CardDescription>
                 </div>
                 <StatusBadge tone="neutral">Draft ready</StatusBadge>
@@ -492,7 +494,7 @@ export default function TrainingPage() {
                     Latest Metrics
                   </CardTitle>
                   <CardDescription>
-                    Numeric values from the newest trainer metric row.
+                    {t("training.metrics.description")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -521,7 +523,7 @@ export default function TrainingPage() {
                 <CardHeader>
                   <CardTitle>Metrics</CardTitle>
                   <CardDescription>
-                    Generic chart for numeric trainer metrics.
+                    {t("training.chart.description")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

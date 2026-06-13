@@ -22,6 +22,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/workspace/page-header";
 import { PaddleOcrSetup } from "@/components/workspace/paddleocr-setup";
+import { TesseractSetup } from "@/components/workspace/tesseract-setup";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import {
   Activity,
@@ -48,6 +49,7 @@ import {
 } from "@/lib/cvCatalog";
 import { apiBaseUrl } from "@/lib/api";
 import { ConfigValue, useTrainingConfig } from "@/lib/useTrainingConfig";
+import { useLanguage } from "@/components/language-provider";
 
 const API_URL = apiBaseUrl();
 
@@ -59,6 +61,7 @@ interface Dataset {
   tasks: string[];
   formats: string[];
   size: string;
+  paddleocrTasks?: string[];
 }
 
 const taskIcons: Record<string, ComponentType<{ className?: string }>> = {
@@ -68,13 +71,28 @@ const taskIcons: Record<string, ComponentType<{ className?: string }>> = {
   object_detection: Activity,
 };
 
-function isDatasetCompatible(dataset: Dataset, model: ModelSpec) {
-  return model.dataset_formats.some((format) =>
+function isDatasetCompatible(
+  dataset: Dataset,
+  model: ModelSpec,
+  taskId: string,
+  params: Record<string, ConfigValue>,
+) {
+  const hasMatchingFormat = model.dataset_formats.some((format) =>
     dataset.formats?.includes(format),
   );
+  const hasMatchingTask = dataset.tasks?.includes(taskId);
+  if (!hasMatchingFormat || !hasMatchingTask) return false;
+
+  if (model.id === "paddleocr" && dataset.paddleocrTasks?.length) {
+    const requestedTask = String(params.ocr_task ?? "rec");
+    return dataset.paddleocrTasks.includes(requestedTask);
+  }
+
+  return true;
 }
 
 const paddleOcrSetupParamKeys = new Set(["config_path", "pretrained_model"]);
+const tesseractSetupParamKeys = new Set(["start_model"]);
 
 function coerceValue(spec: ParamSpec, raw: string | boolean): ConfigValue {
   if (spec.type === "boolean") {
@@ -161,6 +179,7 @@ function ParamInput({
 }
 
 export default function ConfigPage() {
+  const { t } = useLanguage();
   const router = useRouter();
   const {
     config,
@@ -204,7 +223,7 @@ export default function ConfigPage() {
       } catch {
         setDatasets([]);
         setDatasetError(
-          "Datasets unavailable. Upload or refresh datasets after the backend is reachable.",
+          `Datasets unavailable. ${t("common.backendReachable")}`,
         );
       }
     };
@@ -257,9 +276,9 @@ export default function ConfigPage() {
   const compatibleDatasets = useMemo(
     () =>
       datasets.filter((dataset) =>
-        isDatasetCompatible(dataset, selectedModel),
+        isDatasetCompatible(dataset, selectedModel, selectedTask.id, config.params),
       ),
-    [datasets, selectedModel],
+    [config.params, datasets, selectedModel, selectedTask.id],
   );
   const selectedDataset = compatibleDatasets.find(
     (dataset) => dataset.name === config.datasetName,
@@ -267,15 +286,20 @@ export default function ConfigPage() {
   const datasetFormatLabel = selectedModel.dataset_formats.join(" or ");
   const emptyDatasetMessage =
     datasets.length === 0
-      ? "No datasets uploaded yet. Upload a dataset before starting a run."
+      ? t("config.model.empty.noDatasets")
       : `No dataset matches ${selectedModel.label}. Upload a dataset with ${datasetFormatLabel}.`;
 
   const commonSpecs = useMemo(() => catalog.common_params, [catalog]);
   const modelSpecs = selectedModel.params;
-  const visibleModelSpecs =
-    selectedModel.id === "paddleocr"
-      ? modelSpecs.filter((spec) => !paddleOcrSetupParamKeys.has(spec.key))
-      : modelSpecs;
+  const visibleModelSpecs = useMemo(() => {
+    if (selectedModel.id === "paddleocr") {
+      return modelSpecs.filter((spec) => !paddleOcrSetupParamKeys.has(spec.key));
+    }
+    if (selectedModel.id === "tesseract") {
+      return modelSpecs.filter((spec) => !tesseractSetupParamKeys.has(spec.key));
+    }
+    return modelSpecs;
+  }, [modelSpecs, selectedModel.id]);
 
   useEffect(() => {
     if (selectedDataset) return;
@@ -336,7 +360,7 @@ export default function ConfigPage() {
         <PageHeader
           eyebrow="Configuration"
           title="Model Configuration"
-          description="Choose a task, model family, dataset, and trainer parameters before opening the training monitor."
+          description={t("config.header.description")}
           actions={
             <>
               <Button
@@ -383,7 +407,7 @@ export default function ConfigPage() {
                   Task
                 </CardTitle>
                 <CardDescription>
-                  Pick the workflow family that owns the trainer.
+                  {t("config.task.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -441,7 +465,7 @@ export default function ConfigPage() {
                   Dataset
                 </CardTitle>
                 <CardDescription>
-                  Only datasets matching the selected model format are shown.
+                  {t("config.dataset.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -499,6 +523,9 @@ export default function ConfigPage() {
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         {dataset.images.toLocaleString()} images -{" "}
                         {dataset.formats.join(", ")}
+                        {dataset.paddleocrTasks?.length
+                          ? ` - OCR: ${dataset.paddleocrTasks.join(", ")}`
+                          : ""}
                       </p>
                     </div>
                   ))}
@@ -567,7 +594,7 @@ export default function ConfigPage() {
               <CardHeader>
                 <CardTitle>Run Settings</CardTitle>
                 <CardDescription>
-                  Shared values sent to every trainer in the training payload.
+                  {t("config.run.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
@@ -595,13 +622,21 @@ export default function ConfigPage() {
               <CardHeader>
                 <CardTitle>{selectedModel.label} Parameters</CardTitle>
                 <CardDescription>
-                  Model-specific options are passed in `params` to `/api/train`.
+                  {t("config.params.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
                 {selectedModel.id === "paddleocr" && (
                   <PaddleOcrSetup
                     params={config.params}
+                    presets={selectedModel.base_model_presets}
+                    onParamChange={updateParam}
+                  />
+                )}
+                {selectedModel.id === "tesseract" && (
+                  <TesseractSetup
+                    params={config.params}
+                    presets={selectedModel.base_model_presets}
                     onParamChange={updateParam}
                   />
                 )}

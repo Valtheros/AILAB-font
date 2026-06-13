@@ -9,6 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageToggle } from "@/components/language-toggle";
+import { I18nText } from "@/components/i18n-text";
 
 type AuthErrorPageProps = {
   searchParams?: Promise<{
@@ -17,21 +19,18 @@ type AuthErrorPageProps = {
   }>;
 };
 
-const authErrorCopy: Record<string, { title: string; message: string }> = {
+const authErrorCopy: Record<string, { title: string; messageKey: string }> = {
   access_denied: {
     title: "Access was denied",
-    message:
-      "The sign-in request was not approved. You can return to login and try again.",
+    messageKey: "auth.error.accessDenied",
   },
   account_not_linked: {
     title: "Account is not linked",
-    message:
-      "This email is already tied to another sign-in method. Use the original method or sign in with email.",
+    messageKey: "auth.error.accountNotLinked",
   },
   email_not_verified: {
     title: "Email verification required",
-    message:
-      "Verify your email before opening the workspace. You can request a new verification email from the login page.",
+    messageKey: "auth.error.emailNotVerified",
   },
 };
 
@@ -50,16 +49,14 @@ function errorCopy(error: string | undefined) {
   if (!error) {
     return {
       title: "Authentication error",
-      message:
-        "Something went wrong while signing in. Return to login and try again.",
+      messageKey: "auth.error.default",
     };
   }
 
   return (
     authErrorCopy[error] ?? {
       title: "Authentication error",
-      message:
-        "The sign-in request could not be completed. Return to login and try again.",
+      messageKey: "auth.error.default",
     }
   );
 }
@@ -83,11 +80,14 @@ export default async function AuthErrorPage({
           <span>
             <span className="block text-sm font-semibold">AILAB</span>
             <span className="block text-xs text-muted-foreground">
-              Secure workspace
+              <I18nText textKey="common.secureWorkspace" />
             </span>
           </span>
         </Link>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <LanguageToggle />
+          <ThemeToggle />
+        </div>
       </header>
 
       <section className="mx-auto flex min-h-[calc(100vh-5.5rem)] max-w-6xl items-center justify-center px-4 pb-10 md:px-8">
@@ -97,7 +97,7 @@ export default async function AuthErrorPage({
               <AlertTriangle className="h-5 w-5" />
             </div>
             <CardTitle className="text-2xl">{copy.title}</CardTitle>
-            <CardDescription>{copy.message}</CardDescription>
+            <CardDescription><I18nText textKey={copy.messageKey} /></CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {error && (

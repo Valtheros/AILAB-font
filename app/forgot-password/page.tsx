@@ -1,10 +1,16 @@
+"use client";
+
 import Link from "next/link";
 import { Cpu } from "lucide-react";
 import { Suspense } from "react";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageToggle } from "@/components/language-toggle";
+import { useLanguage } from "@/components/language-provider";
 
 export default function ForgotPasswordPage() {
+  const { t } = useLanguage();
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5 md:px-8">
@@ -15,11 +21,14 @@ export default function ForgotPasswordPage() {
           <span>
             <span className="block text-sm font-semibold">AILAB</span>
             <span className="block text-xs text-muted-foreground">
-              Secure workspace
+              {t("common.secureWorkspace")}
             </span>
           </span>
         </Link>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <LanguageToggle />
+          <ThemeToggle />
+        </div>
       </header>
       <section className="mx-auto grid min-h-[calc(100vh-5.5rem)] max-w-6xl items-center gap-10 px-4 pb-10 md:px-8 lg:grid-cols-[1fr_28rem]">
         <div>
@@ -30,8 +39,7 @@ export default function ForgotPasswordPage() {
             Recover access without leaving your training workspace behind.
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
-            Request a short-lived code, confirm it from your inbox, and set a
-            new password for your AILAB account.
+            {t("auth.forgot.description")}
           </p>
         </div>
         <Suspense fallback={null}>

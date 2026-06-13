@@ -17,6 +17,18 @@ export interface ParamSpec {
   options?: ParamOption[];
 }
 
+export interface OcrBaseModelPreset {
+  id: string;
+  value?: string;
+  label: string;
+  task?: "det" | "rec" | string;
+  config_path?: string;
+  pretrained_model?: string;
+  labels?: string[];
+  description?: string;
+  available?: boolean;
+}
+
 export interface ModelSpec {
   id: string;
   label: string;
@@ -25,6 +37,10 @@ export interface ModelSpec {
   reason: string;
   dataset_formats: string[];
   params: ParamSpec[];
+  accepted_source_formats?: string[];
+  canonical_format?: string;
+  conversion_targets?: string[];
+  base_model_presets?: OcrBaseModelPreset[];
 }
 
 export interface TaskSpec {
@@ -110,6 +126,46 @@ const detectionParams: ParamSpec[] = [
   numberParam("box_nms_thresh", "Box NMS threshold", 0.5, 0.1, 1, 0.05),
   numberParam("detections_per_img", "Detections per image", 100, 1, 1000, 1),
   ...optimizerParams,
+];
+
+const paddleOcrBaseModelPresets: OcrBaseModelPreset[] = [
+  {
+    id: "ppocrv4-rec",
+    label: "PP-OCRv4 Recognition",
+    task: "rec",
+    config_path: "/opt/PaddleOCR/configs/rec/PP-OCRv4/ch_PP-OCRv4_rec.yml",
+    pretrained_model: "",
+    labels: ["rec_gt_train.txt", "rec_gt_val.txt"],
+    description: "General text recognition using the selected PaddleOCR config default weights.",
+    available: true,
+  },
+  {
+    id: "ppocrv4-det",
+    label: "PP-OCRv4 Detection",
+    task: "det",
+    config_path: "/opt/PaddleOCR/configs/det/ch_PP-OCRv4/ch_PP-OCRv4_det.yml",
+    pretrained_model: "",
+    labels: ["det_gt_train.txt", "det_gt_val.txt"],
+    description: "General text detection using the selected PaddleOCR config default weights.",
+    available: true,
+  },
+];
+
+const tesseractBaseModelPresets: OcrBaseModelPreset[] = [
+  {
+    id: "eng",
+    value: "eng",
+    label: "English (eng)",
+    description: "Bundled with the OCR worker image.",
+    available: true,
+  },
+  {
+    id: "tha",
+    value: "tha",
+    label: "Thai (tha)",
+    description: "Bundled with the OCR worker image after rebuild.",
+    available: true,
+  },
 ];
 
 export const fallbackCatalog: CVCatalog = {
@@ -233,6 +289,7 @@ export const fallbackCatalog: CVCatalog = {
           runtime: "PaddlePaddle / PaddleOCR",
           reason: "Official Docker-oriented OCR training stack.",
           dataset_formats: ["paddleocr_labels"],
+          base_model_presets: paddleOcrBaseModelPresets,
           params: [
             textParam("config_path", "Config path", "/opt/PaddleOCR/configs/rec/PP-OCRv4/ch_PP-OCRv4_rec.yml"),
             textParam("pretrained_model", "Pretrained model"),
@@ -254,6 +311,7 @@ export const fallbackCatalog: CVCatalog = {
           runtime: "Tesseract / tesstrain",
           reason: "Official training workflow for language and font adaptation.",
           dataset_formats: ["tesseract_ground_truth"],
+          base_model_presets: tesseractBaseModelPresets,
           params: [
             textParam("model_name", "Output model code", "custom"),
             textParam("start_model", "Start model", "eng"),
@@ -268,7 +326,7 @@ export const fallbackCatalog: CVCatalog = {
       id: "object_detection",
       label: "Object Detection",
       description: "YOLO plus Faster R-CNN for bounding-box detection.",
-      dataset_formats: ["yolo_detection"],
+      dataset_formats: ["yolo_detection", "coco_instances"],
       models: [
         {
           id: "yolo",
@@ -313,7 +371,7 @@ export const fallbackCatalog: CVCatalog = {
           model_name: "fasterrcnn_resnet50_fpn_v2",
           runtime: "PyTorch / TorchVision",
           reason: "Popular two-stage detector with TorchVision pretrained weights.",
-          dataset_formats: ["yolo_detection"],
+          dataset_formats: ["yolo_detection", "coco_instances"],
           params: detectionParams,
         },
       ],
