@@ -39,6 +39,18 @@ interface CompatibleModel {
   task: string;
   ready: boolean;
   reason: string;
+  dataset_task?: string;
+  required_annotations?: string[];
+  accepted_canonical_formats?: string[];
+  train_export_format?: string;
+}
+
+interface ExportCacheEntry {
+  model?: string;
+  export_format?: string;
+  fingerprint?: string;
+  path?: string;
+  created_at?: number;
 }
 
 interface AnnotationStats {
@@ -59,7 +71,10 @@ interface ImportProfile {
   classes: string[];
   image_count: number;
   source_format: string;
+  dataset_task?: string;
+  dataset_tasks?: string[];
   canonical_task: string;
+  canonical_format?: string;
   normalized_formats: string[];
   annotation_stats: AnnotationStats;
   conversion_warnings?: string[];
@@ -67,6 +82,7 @@ interface ImportProfile {
   errors?: string[];
   ready_models?: CompatibleModel[];
   compatible_models?: CompatibleModel[];
+  export_cache?: ExportCacheEntry[];
 }
 
 interface Dataset {
@@ -80,14 +96,22 @@ interface Dataset {
   formats: string[];
   warnings?: string[];
   sourceFormat?: string;
+  datasetTask?: string;
+  datasetTasks?: string[];
   canonicalTask?: string;
+  canonicalFormat?: string;
   normalizedFormats?: string[];
   annotationStats?: AnnotationStats;
   conversionWarnings?: string[];
   readyModels?: CompatibleModel[];
+  exportCache?: ExportCacheEntry[];
 }
 
 const API_URL = apiBaseUrl();
+
+function formatLabel(value?: string) {
+  return value ? value.replaceAll("_", " ") : "unknown";
+}
 
 export default function DatasetPage() {
   const { t } = useLanguage();
@@ -381,17 +405,24 @@ export default function DatasetPage() {
             <CardContent className="space-y-4">
               {importPreview ? (
                 <>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-3">
                     <div className="rounded-lg border border-border bg-background/70 p-3">
                       <p className="text-xs font-medium uppercase text-muted-foreground">Source</p>
-                      <p className="mt-1 text-sm font-semibold">{importPreview.profile.source_format}</p>
+                      <p className="mt-1 text-sm font-semibold">{formatLabel(importPreview.profile.source_format)}</p>
                     </div>
                     <div className="rounded-lg border border-border bg-background/70 p-3">
-                      <p className="text-xs font-medium uppercase text-muted-foreground">Task</p>
-                      <p className="mt-1 text-sm font-semibold">{importPreview.profile.canonical_task}</p>
+                      <p className="text-xs font-medium uppercase text-muted-foreground">Task group</p>
+                      <p className="mt-1 text-sm font-semibold">{formatLabel(importPreview.profile.dataset_task ?? importPreview.profile.canonical_task)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background/70 p-3">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">Canonical</p>
+                      <p className="mt-1 text-sm font-semibold">{formatLabel(importPreview.profile.canonical_format)}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {(importPreview.profile.dataset_tasks ?? []).map((task) => (
+                      <StatusBadge key={task}>{formatLabel(task)}</StatusBadge>
+                    ))}
                     {importPreview.profile.normalized_formats.map((format) => (
                       <Badge key={format} variant="secondary">
                         {format}
@@ -518,8 +549,12 @@ export default function DatasetPage() {
                           <span>{dataset.createdAt}</span>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {(dataset.tasks ?? []).map((task) => (
-                            <StatusBadge key={task}>{task}</StatusBadge>
+                          <StatusBadge tone="success">{formatLabel(dataset.datasetTask ?? dataset.canonicalTask)}</StatusBadge>
+                          {dataset.canonicalFormat && (
+                            <StatusBadge>{formatLabel(dataset.canonicalFormat)}</StatusBadge>
+                          )}
+                          {(dataset.datasetTasks ?? []).map((task) => (
+                            <StatusBadge key={task}>{formatLabel(task)}</StatusBadge>
                           ))}
                           {(dataset.formats ?? []).map((format) => (
                             <Badge key={format} variant="secondary">
@@ -533,6 +568,15 @@ export default function DatasetPage() {
                               <Badge key={`${dataset.id}-${model.task}-${model.id}`}>
                                 {model.label}
                               </Badge>
+                            ))}
+                          </div>
+                        )}
+                        {(dataset.exportCache?.length ?? 0) > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {dataset.exportCache?.slice(0, 3).map((entry) => (
+                              <StatusBadge key={`${entry.model}-${entry.fingerprint}`} tone="success">
+                                cached {entry.model}: {entry.export_format}
+                              </StatusBadge>
                             ))}
                           </div>
                         )}

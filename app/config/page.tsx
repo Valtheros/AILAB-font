@@ -35,6 +35,8 @@ import {
   Play,
   RotateCcw,
   Settings,
+  ShieldCheck,
+  TriangleAlert,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ComponentType } from "react";
@@ -49,9 +51,22 @@ import {
 } from "@/lib/cvCatalog";
 import { apiBaseUrl } from "@/lib/api";
 import { ConfigValue, useTrainingConfig } from "@/lib/useTrainingConfig";
+import { memorySafetyForModel, safeDefaultEntries } from "@/lib/resourceSafety";
 import { useLanguage } from "@/components/language-provider";
 
 const API_URL = apiBaseUrl();
+
+interface CompatibleModel {
+  id: string;
+  label: string;
+  task: string;
+  ready: boolean;
+  reason: string;
+  dataset_task?: string;
+  required_annotations?: string[];
+  accepted_canonical_formats?: string[];
+  train_export_format?: string;
+}
 
 interface Dataset {
   id: string;
@@ -62,6 +77,13 @@ interface Dataset {
   formats: string[];
   size: string;
   paddleocrTasks?: string[];
+  sourceFormat?: string;
+  datasetTask?: string;
+  datasetTasks?: string[];
+  canonicalTask?: string;
+  canonicalFormat?: string;
+  readyModels?: CompatibleModel[];
+  compatibleModels?: CompatibleModel[];
 }
 
 const taskIcons: Record<string, ComponentType<{ className?: string }>> = {
@@ -71,22 +93,39 @@ const taskIcons: Record<string, ComponentType<{ className?: string }>> = {
   object_detection: Activity,
 };
 
+function formatLabel(value?: string) {
+  return value ? value.replaceAll("_", " ") : "unknown";
+}
+
+function isPaddleOcrTaskCompatible(dataset: Dataset, params: Record<string, ConfigValue>) {
+  const requestedTask = String(params.ocr_task ?? "rec");
+  if (requestedTask === "det") return dataset.paddleocrTasks?.includes("det") ?? false;
+  return Boolean(
+    dataset.paddleocrTasks?.includes("rec") ||
+      dataset.formats?.includes("tesseract_ground_truth"),
+  );
+}
+
 function isDatasetCompatible(
   dataset: Dataset,
   model: ModelSpec,
   taskId: string,
   params: Record<string, ConfigValue>,
 ) {
+  const compatibility = dataset.compatibleModels?.find((item) => item.id === model.id);
+  if (compatibility) {
+    if (!compatibility.ready) return false;
+    if (model.id === "paddleocr") return isPaddleOcrTaskCompatible(dataset, params);
+    return true;
+  }
+
   const hasMatchingFormat = model.dataset_formats.some((format) =>
     dataset.formats?.includes(format),
   );
   const hasMatchingTask = dataset.tasks?.includes(taskId);
   if (!hasMatchingFormat || !hasMatchingTask) return false;
 
-  if (model.id === "paddleocr" && dataset.paddleocrTasks?.length) {
-    const requestedTask = String(params.ocr_task ?? "rec");
-    return dataset.paddleocrTasks.includes(requestedTask);
-  }
+  if (model.id === "paddleocr") return isPaddleOcrTaskCompatible(dataset, params);
 
   return true;
 }
@@ -283,11 +322,13 @@ export default function ConfigPage() {
   const selectedDataset = compatibleDatasets.find(
     (dataset) => dataset.name === config.datasetName,
   );
-  const datasetFormatLabel = selectedModel.dataset_formats.join(" or ");
+  const requiredAnnotationLabel =
+    selectedModel.required_annotations?.join(" or ") || selectedModel.dataset_formats.join(" or ");
+  const exportFormatLabel = selectedModel.train_export_format || selectedModel.canonical_format || selectedModel.dataset_formats.join(" or ");
   const emptyDatasetMessage =
     datasets.length === 0
       ? t("config.model.empty.noDatasets")
-      : `No dataset matches ${selectedModel.label}. Upload a dataset with ${datasetFormatLabel}.`;
+      : `No dataset matches ${selectedModel.label}. Need ${requiredAnnotationLabel}. AILAB will prepare ${exportFormatLabel} at train time when possible.`;
 
   const commonSpecs = useMemo(() => catalog.common_params, [catalog]);
   const modelSpecs = selectedModel.params;
@@ -300,6 +341,32 @@ export default function ConfigPage() {
     }
     return modelSpecs;
   }, [modelSpecs, selectedModel.id]);
+
+  const memorySafety = useMemo(
+    () =>
+      memorySafetyForModel(selectedModel, {
+        batchSize: config.batchSize,
+        workers: config.workers,
+        device: config.device,
+        amp: config.amp,
+        params: config.params,
+      }),
+    [config.amp, config.batchSize, config.device, config.params, config.workers, selectedModel],
+  );
+
+  const applySafeSettings = () => {
+    for (const [key, value] of safeDefaultEntries(selectedModel)) {
+      if (key === "batch_size") {
+        updateConfig("batchSize", Number(value));
+      } else if (key === "workers") {
+        updateConfig("workers", Number(value));
+      } else if (key === "amp") {
+        updateConfig("amp", Boolean(value));
+      } else {
+        updateParam(key, value as ConfigValue);
+      }
+    }
+  };
 
   useEffect(() => {
     if (selectedDataset) return;
@@ -379,7 +446,7 @@ export default function ConfigPage() {
                 <BookOpenCheck className="h-4 w-4" />
                 Guide
               </Button>
-              <Button size="sm" onClick={() => router.push("/training")}>
+              <Button size="sm" onClick={() => router.push("/training?mode=review")} disabled={!memorySafety.ok}>
                 <Play className="h-4 w-4" />
                 Review Training
               </Button>
@@ -471,15 +538,21 @@ export default function ConfigPage() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <p className="text-xs font-medium uppercase text-muted-foreground">
-                    Required format
+                    Required annotations
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {selectedModel.dataset_formats.map((format) => (
-                      <Badge variant="secondary" key={format}>
-                        {format}
+                    {(selectedModel.required_annotations?.length
+                      ? selectedModel.required_annotations
+                      : selectedModel.dataset_formats
+                    ).map((item) => (
+                      <Badge variant="secondary" key={item}>
+                        {item}
                       </Badge>
                     ))}
                   </div>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    Train export: {exportFormatLabel}
+                  </p>
                 </div>
                 {compatibleDatasets.length > 0 ? (
                   <Select
@@ -521,8 +594,7 @@ export default function ConfigPage() {
                         </div>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {dataset.images.toLocaleString()} images -{" "}
-                        {dataset.formats.join(", ")}
+                        {dataset.images.toLocaleString()} images - {formatLabel(dataset.datasetTask ?? dataset.canonicalTask)} - {formatLabel(dataset.canonicalFormat)}
                         {dataset.paddleocrTasks?.length
                           ? ` - OCR: ${dataset.paddleocrTasks.join(", ")}`
                           : ""}
@@ -615,6 +687,65 @@ export default function ConfigPage() {
                     onChange={(value) => handleCommonParam(spec, value)}
                   />
                 ))}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <ShieldCheck className="h-5 w-5" />
+                      Memory safety
+                    </CardTitle>
+                    <CardDescription>
+                      Helps prevent memory errors before training starts.
+                    </CardDescription>
+                  </div>
+                  <StatusBadge tone={memorySafety.ok ? "success" : "warning"}>
+                    {memorySafety.label}
+                  </StatusBadge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  {memorySafety.summary.map((item) => (
+                    <Badge variant="secondary" key={item}>
+                      {item}
+                    </Badge>
+                  ))}
+                  <Badge variant="outline">
+                    AMP {config.amp ? "on" : "off"}
+                  </Badge>
+                </div>
+
+                {!memorySafety.ok && (
+                  <div className="rounded-lg border border-amber-300/40 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
+                    <div className="flex items-start gap-2 font-medium">
+                      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                      Adjust these values before training
+                    </div>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 leading-6">
+                      {[...memorySafety.issues, ...memorySafety.suggestions].map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {selectedModel.memory_notes?.length ? (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {selectedModel.memory_notes.map((note) => (
+                      <div key={note} className="rounded-lg border border-border bg-background/70 p-3 text-sm leading-6 text-muted-foreground">
+                        {note}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <Button variant="outline" size="sm" onClick={applySafeSettings}>
+                  Apply safe settings
+                </Button>
               </CardContent>
             </Card>
 

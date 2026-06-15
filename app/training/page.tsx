@@ -42,10 +42,12 @@ import {
 import { type CVCatalog, fallbackCatalog, getModel, getTask } from "@/lib/cvCatalog";
 import { apiBaseUrl, projectSlug } from "@/lib/api";
 import { useTrainingConfig } from "@/lib/useTrainingConfig";
+import { memorySafetyForModel } from "@/lib/resourceSafety";
 import { useLanguage } from "@/components/language-provider";
 
 const API_URL = apiBaseUrl();
 const ACTIVE_JOB_KEY = "ailab-active-job";
+const TERMINAL_STATUSES = new Set(["exited", "failed", "stopped", "not_found"]);
 
 type MetricRow = Record<string, string | number>;
 
@@ -84,6 +86,8 @@ function statusTone(value: string): StatusTone {
 
 export default function TrainingPage() {
   const { t } = useLanguage();
+  const [isReviewMode, setIsReviewMode] = useState(false);
+  const [didReadUrlMode, setDidReadUrlMode] = useState(false);
   const { config, deviceSelection, updateConfig } = useTrainingConfig();
   const [isTraining, setIsTraining] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -95,7 +99,15 @@ export default function TrainingPage() {
   const [metricsHistory, setMetricsHistory] = useState<MetricRow[]>([]);
   const [catalog, setCatalog] = useState<CVCatalog>(fallbackCatalog);
   const [streamError, setStreamError] = useState("");
+  const [runError, setRunError] = useState("");
+  const [isStopping, setIsStopping] = useState(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const mode = new URLSearchParams(window.location.search).get("mode");
+    setIsReviewMode(mode === "review");
+    setDidReadUrlMode(true);
+  }, []);
 
   const selectedTask = getTask(catalog, config.taskType);
   const selectedModel = getModel(
@@ -171,6 +183,18 @@ export default function TrainingPage() {
     deviceOptions.find((option) => option.value === config.device)?.label ??
     (config.device === "cpu" ? "CPU" : `GPU ${config.device}`);
 
+  const memorySafety = useMemo(
+    () =>
+      memorySafetyForModel(selectedModel, {
+        batchSize: config.batchSize,
+        workers: config.workers,
+        device: config.device,
+        amp: config.amp,
+        params: config.params,
+      }),
+    [config.amp, config.batchSize, config.device, config.params, config.workers, selectedModel],
+  );
+
   const summaryItems = [
     { label: "Task", value: selectedTask.label },
     { label: "Model", value: `${selectedModel.label} (${effectiveModelName})` },
@@ -180,6 +204,7 @@ export default function TrainingPage() {
     { label: "Device", value: selectedDeviceLabel },
     { label: "Workers", value: config.workers },
     { label: "AMP", value: config.amp ? "On" : "Off" },
+    { label: "Memory", value: memorySafety.label },
   ];
 
   const detailItems = Object.entries(config.params).map(([key, value]) => ({
@@ -195,6 +220,9 @@ export default function TrainingPage() {
 
     const generatedProjectName = `${projectSlug(config.projectName || effectiveModelType)}_${Date.now()}`;
     setIsTraining(true);
+    setIsStopping(false);
+    setRunError("");
+    setStreamError("");
     setStatus("queued");
     setLogs("Submitting training job...\n");
     setMetricsHistory([]);
@@ -251,41 +279,80 @@ export default function TrainingPage() {
   };
 
   const stopTraining = async () => {
-    if (!jobId) return;
+    if (!jobId || isStopping) return;
+
+    setIsStopping(true);
+    setRunError("");
+    setStreamError("");
+    setStatus("stopping");
+    setLogs((previous) => `${previous}
+Stop requested for job ${jobId}.
+`);
 
     try {
       const response = await fetch(`${API_URL}/api/stop/${jobId}`, {
         method: "POST",
       });
-      if (!response.ok) throw new Error("Failed to stop training");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to stop training");
+      }
+      sessionStorage.removeItem(ACTIVE_JOB_KEY);
       setIsTraining(false);
-      setStatus("stopped");
-      setLogs((previous) => `${previous}\nStop requested.\n`);
+      setJobId(null);
+      setProjectName(null);
+      setStatus(data.status && data.status !== "success" ? data.status : "stopped");
+      setLogs((previous) => `${previous}Stop accepted by backend.
+`);
     } catch (error) {
-      setLogs(
-        (previous) =>
-          `${previous}\nStop error: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      setRunError(message);
+      setStatus(jobId ? "queued" : "idle");
+      setLogs((previous) => `${previous}Stop error: ${message}
+`);
+    } finally {
+      setIsStopping(false);
     }
   };
 
   useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem(ACTIVE_JOB_KEY);
-      if (!saved) return;
-      const active = JSON.parse(saved) as {
-        jobId?: string;
-        projectName?: string;
-      };
-      if (!active.jobId) return;
-      setJobId(active.jobId);
-      setProjectName(active.projectName ?? null);
-      setStatus("queued");
-      setIsTraining(true);
-    } catch {
-      sessionStorage.removeItem(ACTIVE_JOB_KEY);
-    }
-  }, []);
+    if (!didReadUrlMode || isReviewMode) return;
+
+    let cancelled = false;
+
+    const restoreActiveJob = async () => {
+      try {
+        const saved = sessionStorage.getItem(ACTIVE_JOB_KEY);
+        if (!saved) return;
+        const active = JSON.parse(saved) as {
+          jobId?: string;
+          projectName?: string;
+        };
+        if (!active.jobId) return;
+
+        const response = await fetch(`${API_URL}/api/status/${encodeURIComponent(active.jobId)}`);
+        if (!response.ok) throw new Error("Saved job is unavailable");
+        const data = (await response.json()) as { status?: string };
+        const nextStatus = data.status ?? "queued";
+        if (TERMINAL_STATUSES.has(nextStatus)) {
+          sessionStorage.removeItem(ACTIVE_JOB_KEY);
+          return;
+        }
+        if (cancelled) return;
+        setJobId(active.jobId);
+        setProjectName(active.projectName ?? null);
+        setStatus(nextStatus);
+        setIsTraining(["queued", "running"].includes(nextStatus));
+      } catch {
+        sessionStorage.removeItem(ACTIVE_JOB_KEY);
+      }
+    };
+
+    restoreActiveJob();
+    return () => {
+      cancelled = true;
+    };
+  }, [didReadUrlMode, isReviewMode]);
 
   useEffect(() => {
     fetch(`${API_URL}/api/model-catalog`)
@@ -304,10 +371,15 @@ export default function TrainingPage() {
 
     source.addEventListener("open", () => setStreamError(""));
     source.addEventListener("snapshot", (event) => {
-      const data = parse<{ status: string; logs: string; metrics: MetricRow[] }>(event);
+      const data = parse<{ status: string; project_name?: string | null; logs: string; metrics: MetricRow[] }>(event);
       setStatus(data.status);
+      if (data.project_name) setProjectName(data.project_name);
       setLogs(data.logs || "");
       setMetricsHistory(data.metrics || []);
+      if (TERMINAL_STATUSES.has(data.status)) {
+        setIsTraining(false);
+        sessionStorage.removeItem(ACTIVE_JOB_KEY);
+      }
     });
     source.addEventListener("log", (event) => {
       const data = parse<{ text: string; replace?: boolean }>(event);
@@ -316,7 +388,10 @@ export default function TrainingPage() {
     source.addEventListener("status", (event) => {
       const data = parse<{ status: string }>(event);
       setStatus(data.status);
-      if (["exited", "failed", "stopped"].includes(data.status)) setIsTraining(false);
+      if (TERMINAL_STATUSES.has(data.status)) {
+        setIsTraining(false);
+        sessionStorage.removeItem(ACTIVE_JOB_KEY);
+      }
     });
     source.addEventListener("metrics", (event) => {
       const data = parse<{ metrics: MetricRow[] }>(event);
@@ -357,14 +432,20 @@ export default function TrainingPage() {
                 </Button>
               )}
               {isTraining && (
-                <Button variant="destructive" onClick={stopTraining}>
+                <Button variant="destructive" onClick={stopTraining} disabled={isStopping}>
                   <Square className="h-4 w-4" />
-                  Stop Run
+                  {isStopping ? "Stopping..." : "Stop Run"}
                 </Button>
               )}
             </>
           }
         />
+
+        {runError && (
+          <div className="flex">
+            <StatusBadge tone="danger">Stop failed: {runError}</StatusBadge>
+          </div>
+        )}
 
         {!isTraining && status !== "running" && (
           <Card>
@@ -431,7 +512,17 @@ export default function TrainingPage() {
                   </StatusBadge>
                 </div>
               )}
-              <Button onClick={startTraining} disabled={!hasSelectedDataset}>
+              {!memorySafety.ok && (
+                <div className="rounded-lg border border-amber-300/40 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
+                  <p className="font-medium">Memory safety needs adjustment</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 leading-6">
+                    {[...memorySafety.issues, ...memorySafety.suggestions].map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Button onClick={startTraining} disabled={!hasSelectedDataset || !memorySafety.ok}>
                 <Play className="h-4 w-4" />
                 Start Training
               </Button>
@@ -458,11 +549,24 @@ export default function TrainingPage() {
                 Project: {projectName ?? "-"} | Job: {jobId ?? "-"}
               </p>
             </div>
-            <div className="text-left sm:text-right">
-              <p className="text-2xl font-semibold text-foreground">
-                {Math.round(epoch)}/{totalEpochs}
-              </p>
-              <p className="text-sm text-muted-foreground">epochs</p>
+            <div className="flex flex-col items-start gap-3 sm:items-end">
+              <div className="text-left sm:text-right">
+                <p className="text-2xl font-semibold text-foreground">
+                  {Math.round(epoch)}/{totalEpochs}
+                </p>
+                <p className="text-sm text-muted-foreground">epochs</p>
+              </div>
+              {isTraining && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={stopTraining}
+                  disabled={isStopping}
+                >
+                  <Square className="h-4 w-4" />
+                  {isStopping ? "Stopping..." : "Stop Run"}
+                </Button>
+              )}
             </div>
           </div>
         )}

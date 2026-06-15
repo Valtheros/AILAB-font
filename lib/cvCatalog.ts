@@ -29,6 +29,14 @@ export interface OcrBaseModelPreset {
   available?: boolean;
 }
 
+export interface ResourceProfileMetadata {
+  target_gpu_vram_mb?: number;
+  safe_gpu_vram_mb?: number;
+  target_system_ram_gb?: number;
+  safe_system_ram_gb?: number;
+  policy?: string;
+}
+
 export interface ModelSpec {
   id: string;
   label: string;
@@ -37,10 +45,18 @@ export interface ModelSpec {
   reason: string;
   dataset_formats: string[];
   params: ParamSpec[];
+  dataset_task?: string;
+  required_annotations?: string[];
   accepted_source_formats?: string[];
+  accepted_canonical_formats?: string[];
   canonical_format?: string;
   conversion_targets?: string[];
+  train_export_format?: string;
   base_model_presets?: OcrBaseModelPreset[];
+  resource_profile?: ResourceProfileMetadata;
+  safe_defaults?: Record<string, number | string | boolean>;
+  hard_limits?: Record<string, number | string | boolean>;
+  memory_notes?: string[];
 }
 
 export interface TaskSpec {

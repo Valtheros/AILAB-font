@@ -134,6 +134,44 @@ const decisionRows = [
   },
 ];
 
+const memorySafeRows = [
+  {
+    model: "ResNet / EfficientNet",
+    start: "image_size 224, batch 16, workers 4",
+    cap: "Up to batch 64 at 224px; reduce batch for 512px or 1024px.",
+  },
+  {
+    model: "YOLOv11",
+    start: "YOLOv11n or YOLOv11s, imgsz 640, batch 16, cache off",
+    cap: "imgsz above 1024 is blocked to reduce memory errors; m/l/x need smaller batches.",
+  },
+  {
+    model: "Faster R-CNN",
+    start: "short side 640, max_size 1333, batch 2",
+    cap: "Hard cap batch 4, image_size 1024, max_size 1600.",
+  },
+  {
+    model: "Mask R-CNN",
+    start: "short side 640, max_size 1333, batch 2",
+    cap: "Instance masks use more memory; use batch 1-2 for high-resolution data.",
+  },
+  {
+    model: "DeepLabV3+",
+    start: "image_size 512, batch 2",
+    cap: "Use image_size 1024 only with batch 1. image_size 2048 is blocked.",
+  },
+  {
+    model: "PaddleOCR",
+    start: "recognition batch_per_card 32, detection batch_per_card 8",
+    cap: "Detection uses lower safe batch than recognition.",
+  },
+  {
+    model: "Tesseract",
+    start: "workers 2, CPU/RAM guarded",
+    cap: "Keep parallel work low to reduce memory errors.",
+  },
+];
+
 const modelGuides: ModelGuide[] = [
   {
     title: "ResNet / EfficientNet",
@@ -165,17 +203,17 @@ const modelGuides: ModelGuide[] = [
     title: "YOLOv11",
     task: "Object detection",
     format: "yolo_detection",
-    accepted: ["YOLO detection", "COCO boxes converted by import"],
+    accepted: ["YOLO detection", "COCO boxes exported at train time"],
     icon: Crosshair,
     useWhen: "Use when the goal is fast bounding-box detection for one or more objects in each image.",
     prepare: [
       "Use YOLO labels with data.yaml, images/train, and labels/train.",
-      "COCO box datasets can also be uploaded; AILAB creates YOLO files under .ailab_normalized.",
+      "COCO box datasets can also be uploaded; AILAB creates YOLO files under .ailab_exports when YOLO training starts.",
       "Each label row must be class_id x_center y_center width height with normalized values.",
     ],
     importResult: [
       "Ready models should include YOLOv11 when yolo_detection is present.",
-      "COCO box uploads should show normalized YOLO detection format after import.",
+      "COCO box uploads should show YOLOv11 as ready; YOLO export is created when training starts.",
     ],
     configure: [
       "Start with Nano or Small model size for a quick baseline.",
@@ -275,7 +313,7 @@ const modelGuides: ModelGuide[] = [
     prepare: [
       "For recognition, use cropped text images with rec_gt_train.txt.",
       "For detection, use full images with det_gt_train.txt box or polygon labels.",
-      "Tesseract .gt.txt recognition data can be imported and normalized for PaddleOCR recognition.",
+      "Tesseract .gt.txt recognition data can be exported for PaddleOCR recognition when training starts.",
     ],
     importResult: [
       "Ready models should include PaddleOCR when paddleocr_labels is present.",
@@ -301,7 +339,7 @@ const modelGuides: ModelGuide[] = [
     prepare: [
       "Pair each image with a matching .gt.txt file using the same base name.",
       "Keep each image focused on a line or word when possible.",
-      "PaddleOCR recognition labels can be imported and normalized into .gt.txt pairs.",
+      "PaddleOCR recognition labels can be exported into .gt.txt pairs when Tesseract training starts.",
     ],
     importResult: [
       "Ready models should include Tesseract when .gt.txt pairs exist.",
@@ -624,6 +662,32 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
               </CardContent>
             </Card>
 
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <SlidersHorizontal className="h-5 w-5" />
+                  Memory Safety Defaults
+                </CardTitle>
+                <CardDescription>
+                  Start with these memory-safe settings to reduce training memory errors. Backend validation still checks every run before enqueue.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {memorySafeRows.map((row) => (
+                    <div key={row.model} className="rounded-lg border border-border bg-background/70 p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge>{row.model}</Badge>
+                        <StatusBadge tone="success">Auto-safe start</StatusBadge>
+                      </div>
+                      <p className="mt-3 text-sm font-medium">{row.start}</p>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{row.cap}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
             <section className="grid gap-4 lg:grid-cols-3">
               {[
                 {
@@ -633,7 +697,7 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
                 },
                 {
                   title: "2. Import Dataset",
-                  body: "Press Import only after the preview looks right. AILAB keeps the original files and writes generated files under .ailab_normalized when conversion is needed.",
+                  body: "Press Import only after the preview looks right. AILAB keeps the original files and creates model-specific exports under .ailab_exports when training starts.",
                   icon: FileArchive,
                 },
                 {
