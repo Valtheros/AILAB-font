@@ -146,10 +146,12 @@ function coerceValue(spec: ParamSpec, raw: string | boolean): ConfigValue {
 
 function ParamInput({
   spec,
+  t,
   value,
   onChange,
 }: {
   spec: ParamSpec;
+  t: (key: string) => string;
   value: ConfigValue;
   onChange: (value: ConfigValue) => void;
 }) {
@@ -160,7 +162,7 @@ function ParamInput({
           <Label>{spec.label}</Label>
           {spec.description && (
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              {spec.description}
+              {t(spec.description)}
             </p>
           )}
         </div>
@@ -190,7 +192,7 @@ function ParamInput({
         </Select>
         {spec.description && (
           <p className="text-xs leading-5 text-muted-foreground">
-            {spec.description}
+            {t(spec.description)}
           </p>
         )}
       </div>
@@ -210,7 +212,7 @@ function ParamInput({
       />
       {spec.description && (
         <p className="text-xs leading-5 text-muted-foreground">
-          {spec.description}
+          {t(spec.description)}
         </p>
       )}
     </div>
@@ -322,13 +324,21 @@ export default function ConfigPage() {
   const selectedDataset = compatibleDatasets.find(
     (dataset) => dataset.name === config.datasetName,
   );
-  const requiredAnnotationLabel =
-    selectedModel.required_annotations?.join(" or ") || selectedModel.dataset_formats.join(" or ");
+  const joinDetailLabels = (items: string[]) =>
+    items.map((item) => t(item)).join(t("common.orSeparator"));
+  const requiredAnnotationLabel = joinDetailLabels(
+    selectedModel.required_annotations?.length
+      ? selectedModel.required_annotations
+      : selectedModel.dataset_formats,
+  );
   const exportFormatLabel = selectedModel.train_export_format || selectedModel.canonical_format || selectedModel.dataset_formats.join(" or ");
   const emptyDatasetMessage =
     datasets.length === 0
       ? t("config.model.empty.noDatasets")
-      : `No dataset matches ${selectedModel.label}. Need ${requiredAnnotationLabel}. AILAB will prepare ${exportFormatLabel} at train time when possible.`;
+      : t("config.dataset.empty.noMatch")
+          .replace("{model}", selectedModel.label)
+          .replace("{annotations}", requiredAnnotationLabel)
+          .replace("{exportFormat}", exportFormatLabel);
 
   const commonSpecs = useMemo(() => catalog.common_params, [catalog]);
   const modelSpecs = selectedModel.params;
@@ -546,12 +556,12 @@ export default function ConfigPage() {
                       : selectedModel.dataset_formats
                     ).map((item) => (
                       <Badge variant="secondary" key={item}>
-                        {item}
+                        {t(item)}
                       </Badge>
                     ))}
                   </div>
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                    Train export: {exportFormatLabel}
+                    {t("config.dataset.trainExport").replace("{exportFormat}", exportFormatLabel)}
                   </p>
                 </div>
                 {compatibleDatasets.length > 0 ? (
@@ -621,7 +631,7 @@ export default function ConfigPage() {
                   <Cpu className="h-5 w-5" />
                   Model
                 </CardTitle>
-                <CardDescription>{selectedTask.description}</CardDescription>
+                <CardDescription>{t(selectedTask.description)}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-2">
                 {selectedTask.models.map((model) => {
@@ -654,7 +664,7 @@ export default function ConfigPage() {
                           active ? "text-background/80" : "text-muted-foreground"
                         }`}
                       >
-                        {model.reason}
+                        {t(model.reason)}
                       </p>
                     </button>
                   );
@@ -683,6 +693,7 @@ export default function ConfigPage() {
                   <ParamInput
                     key={spec.key}
                     spec={spec}
+                    t={t}
                     value={commonValue(spec)}
                     onChange={(value) => handleCommonParam(spec, value)}
                   />
@@ -699,7 +710,7 @@ export default function ConfigPage() {
                       Memory safety
                     </CardTitle>
                     <CardDescription>
-                      Helps prevent memory errors before training starts.
+                      {t("Helps prevent memory errors before training starts.")}
                     </CardDescription>
                   </div>
                   <StatusBadge tone={memorySafety.ok ? "success" : "warning"}>
@@ -723,11 +734,11 @@ export default function ConfigPage() {
                   <div className="rounded-lg border border-amber-300/40 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
                     <div className="flex items-start gap-2 font-medium">
                       <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                      Adjust these values before training
+                      {t("Adjust these values before training")}
                     </div>
                     <ul className="mt-2 list-disc space-y-1 pl-5 leading-6">
                       {[...memorySafety.issues, ...memorySafety.suggestions].map((item) => (
-                        <li key={item}>{item}</li>
+                        <li key={item}>{t(item)}</li>
                       ))}
                     </ul>
                   </div>
@@ -737,7 +748,7 @@ export default function ConfigPage() {
                   <div className="grid gap-2 md:grid-cols-2">
                     {selectedModel.memory_notes.map((note) => (
                       <div key={note} className="rounded-lg border border-border bg-background/70 p-3 text-sm leading-6 text-muted-foreground">
-                        {note}
+                        {t(note)}
                       </div>
                     ))}
                   </div>
@@ -776,6 +787,7 @@ export default function ConfigPage() {
                     <ParamInput
                       key={spec.key}
                       spec={spec}
+                      t={t}
                       value={config.params[spec.key] ?? spec.default}
                       onChange={(value) => updateParam(spec.key, value)}
                     />

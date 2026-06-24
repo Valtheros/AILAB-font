@@ -7,6 +7,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-thai: "IBM Plex Sans Thai", "Noto Sans Thai", "Leelawadee UI", "Tahoma", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono",
     monospace;
   --color-sidebar-ring: var(--sidebar-ring);
@@ -122,6 +123,19 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  html[lang="th"] body {
+    font-family: var(--font-thai);
+    line-height: 1.62;
+    text-rendering: geometricPrecision;
+  }
+
+  html[lang="th"] button,
+  html[lang="th"] input,
+  html[lang="th"] textarea,
+  html[lang="th"] select {
+    font-family: var(--font-thai);
   }
 }
 

@@ -688,33 +688,6 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
               </CardContent>
             </Card>
 
-            <section className="grid gap-4 lg:grid-cols-3">
-              {[
-                {
-                  title: "1. Upload ZIP",
-                  body: "Use the Dataset page. AILAB inspects the ZIP first and shows source format, task, classes, annotation counts, and ready models.",
-                  icon: Upload,
-                },
-                {
-                  title: "2. Import Dataset",
-                  body: "Press Import only after the preview looks right. AILAB keeps the original files and creates model-specific exports under .ailab_exports when training starts.",
-                  icon: FileArchive,
-                },
-                {
-                  title: "3. Configure Run",
-                  body: "Open Configuration. Only compatible datasets appear for the chosen model. If a dataset is missing, return to Dataset and inspect the warnings.",
-                  icon: Settings2,
-                },
-              ].map(({ body, icon: Icon, title }) => (
-                <div key={title} className="rounded-lg border border-border bg-card p-4">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background">
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                  </span>
-                  <h2 className="mt-4 text-sm font-semibold">{title}</h2>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground"><I18nText textKey={body} /></p>
-                </div>
-              ))}
-            </section>
           </TabsContent>
 
           <TabsContent value="models">

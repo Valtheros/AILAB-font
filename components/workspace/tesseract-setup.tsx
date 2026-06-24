@@ -85,7 +85,7 @@ export function TesseractSetup({
                         active ? "text-background/70" : "text-muted-foreground"
                       }`}
                     >
-                      {preset.description}
+                      {t(preset.description)}
                     </p>
                   )}
                 </div>
