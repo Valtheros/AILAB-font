@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { LogIn, LogOut, UserRound } from "lucide-react";
+import { LogIn, LogOut, Undo2, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
@@ -30,6 +30,8 @@ export function SessionMenu() {
     );
   }
 
+  const impersonatedBy = (session.session as { impersonatedBy?: string | null } | undefined)?.impersonatedBy;
+
   return (
     <div className="flex items-center gap-2">
       <Button asChild className="hidden max-w-48 sm:inline-flex" size="sm" variant="outline">
@@ -38,6 +40,23 @@ export function SessionMenu() {
           <span className="truncate">{session.user.name || session.user.email}</span>
         </Link>
       </Button>
+      {impersonatedBy && (
+        <Button
+          aria-label="Stop impersonating"
+          onClick={async () => {
+            const adminApi = (authClient as unknown as {
+              admin?: { stopImpersonating?: () => Promise<{ error?: { message?: string } | null }> };
+            }).admin;
+            await adminApi?.stopImpersonating?.();
+            router.push("/admin/users");
+            router.refresh();
+          }}
+          size="icon"
+          variant="outline"
+        >
+          <Undo2 className="h-4 w-4" />
+        </Button>
+      )}
       <Button
         aria-label="Sign out"
         onClick={async () => {

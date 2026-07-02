@@ -7,11 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "admin:bootstrap": "node ./scripts/bootstrap-admin.mjs",
     "auth:generate": "npx auth@latest generate --config ./lib/auth.ts --output ./database/auth_schema.sql --yes",
     "auth:migrate": "npx auth@latest migrate --config ./lib/auth.ts --yes"
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans-thai": "^5.2.8",
+    "@radix-ui/react-alert-dialog": "^1.1.18",
+    "@radix-ui/react-dialog": "^1.1.18",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-progress": "^1.1.8",
     "@radix-ui/react-select": "^2.2.6",

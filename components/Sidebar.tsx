@@ -11,11 +11,13 @@ import {
   Download,
   Menu,
   UserRound,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useEffect } from "react";
+import { authClient } from "@/lib/auth-client";
 
 const navItems = [
   {
@@ -55,6 +57,12 @@ const navItems = [
   },
 ];
 
+const adminNavItem = {
+  title: "Admin",
+  href: "/admin/users",
+  icon: ShieldCheck,
+};
+
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
@@ -62,6 +70,9 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const { data: session } = authClient.useSession();
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
+  const visibleNavItems = isAdmin ? [...navItems, adminNavItem] : navItems;
 
   // Close mobile sidebar when route changes
   useEffect(() => {
@@ -97,7 +108,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           </div>
 
           <nav className="flex-1 space-y-1 p-3">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
