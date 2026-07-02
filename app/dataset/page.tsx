@@ -113,6 +113,25 @@ function formatLabel(value?: string) {
   return value ? value.replaceAll("_", " ") : "unknown";
 }
 
+function normalizeUploadMessage(message: string) {
+  const sentences = message
+    .split(/(?<=\.)\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (sentences.length === 0) return message;
+
+  const seen = new Set<string>();
+  const unique = sentences.filter((sentence) => {
+    if (seen.has(sentence)) return false;
+    seen.add(sentence);
+    return true;
+  });
+
+  const normalized = unique.slice(0, 4).join(" ");
+  const omitted = unique.length - 4;
+  return omitted > 0 ? `${normalized} ${omitted} more issues were omitted.` : normalized;
+}
+
 export default function DatasetPage() {
   const { t } = useLanguage();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
@@ -215,7 +234,7 @@ export default function DatasetPage() {
     } catch (error) {
       setPendingFile(null);
       setUploadStatus("error");
-      setUploadMessage(error instanceof Error ? error.message : "Inspection failed");
+      setUploadMessage(normalizeUploadMessage(error instanceof Error ? error.message : "Inspection failed"));
     } finally {
       setIsUploading(false);
     }
@@ -249,7 +268,7 @@ export default function DatasetPage() {
       }, 2600);
     } catch (error) {
       setUploadStatus("error");
-      setUploadMessage(error instanceof Error ? error.message : "Import failed");
+      setUploadMessage(normalizeUploadMessage(error instanceof Error ? error.message : "Import failed"));
     } finally {
       setIsUploading(false);
     }
@@ -362,12 +381,38 @@ export default function DatasetPage() {
                       <CheckCircle2 className="mb-4 h-10 w-10 text-emerald-500" />
                       <StatusBadge tone="success">Ready</StatusBadge>
                       <p className="mt-3 max-w-lg font-medium">{uploadMessage}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-4"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
+                      >
+                        <Upload className="h-4 w-4" />
+                        Choose another ZIP
+                      </Button>
                     </>
                   ) : uploadStatus === "error" ? (
                     <>
                       <AlertCircle className="mb-4 h-10 w-10 text-red-500" />
                       <StatusBadge tone="danger">Upload failed</StatusBadge>
-                      <p className="mt-3 max-w-lg font-medium">{uploadMessage}</p>
+                      <p className="mt-3 max-h-40 max-w-lg overflow-y-auto whitespace-pre-wrap break-words px-1 text-sm font-medium leading-relaxed sm:text-base">
+                        {uploadMessage}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-4"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
+                      >
+                        <Upload className="h-4 w-4" />
+                        Choose another ZIP
+                      </Button>
                     </>
                   ) : (
                     <>
