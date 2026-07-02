@@ -14,7 +14,6 @@ import {
   ScanText,
 } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -94,22 +93,16 @@ export default function DashboardPage() {
 
   return (
     <MainLayout>
-      <div className="space-y-6">
-        <PageHeader
-          eyebrow="Workspace"
-          title="Dashboard"
-          description={t("dashboard.header.description")}
-          actions={
-            <Button asChild>
-              <Link href="/config">
-                Configure run
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-          }
-        />
+      <div className="flex flex-col gap-6">
+        <div className="order-1">
+          <PageHeader
+            eyebrow="Workspace"
+            title="Dashboard"
+            description={t("dashboard.header.description")}
+          />
+        </div>
 
-        <section className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
+        <section className="order-3 grid gap-4 md:order-2 xl:grid-cols-[1.15fr_.85fr]">
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center gap-2">
@@ -170,7 +163,7 @@ export default function DashboardPage() {
           </Card>
         </section>
 
-        <Card>
+        <Card className="order-2 md:order-3">
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>

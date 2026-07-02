@@ -134,44 +134,6 @@ const decisionRows = [
   },
 ];
 
-const memorySafeRows = [
-  {
-    model: "ResNet / EfficientNet",
-    start: "image_size 224, batch 16, workers 4",
-    cap: "Up to batch 64 at 224px; reduce batch for 512px or 1024px.",
-  },
-  {
-    model: "YOLOv11",
-    start: "YOLOv11n or YOLOv11s, imgsz 640, batch 16, cache off",
-    cap: "imgsz above 1024 is blocked to reduce memory errors; m/l/x need smaller batches.",
-  },
-  {
-    model: "Faster R-CNN",
-    start: "short side 640, max_size 1333, batch 2",
-    cap: "Hard cap batch 4, image_size 1024, max_size 1600.",
-  },
-  {
-    model: "Mask R-CNN",
-    start: "short side 640, max_size 1333, batch 2",
-    cap: "Instance masks use more memory; use batch 1-2 for high-resolution data.",
-  },
-  {
-    model: "DeepLabV3+",
-    start: "image_size 512, batch 2",
-    cap: "Use image_size 1024 only with batch 1. image_size 2048 is blocked.",
-  },
-  {
-    model: "PaddleOCR",
-    start: "recognition batch_per_card 32, detection batch_per_card 8",
-    cap: "Detection uses lower safe batch than recognition.",
-  },
-  {
-    model: "Tesseract",
-    start: "workers 2, CPU/RAM guarded",
-    cap: "Keep parallel work low to reduce memory errors.",
-  },
-];
-
 const modelGuides: ModelGuide[] = [
   {
     title: "ResNet / EfficientNet",
@@ -651,37 +613,11 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
                       key={row.need}
                       className="rounded-lg border border-border bg-background/70 p-4"
                     >
-                      <p className="text-sm font-semibold">{row.need}</p>
+                      <p className="text-sm font-semibold"><I18nText textKey={row.need} /></p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Badge>{row.model}</Badge>
                         <Badge variant="secondary">{row.dataset}</Badge>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <SlidersHorizontal className="h-5 w-5" />
-                  Memory Safety Defaults
-                </CardTitle>
-                <CardDescription>
-                  Start with these memory-safe settings to reduce training memory errors. Backend validation still checks every run before enqueue.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {memorySafeRows.map((row) => (
-                    <div key={row.model} className="rounded-lg border border-border bg-background/70 p-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge>{row.model}</Badge>
-                        <StatusBadge tone="success">Auto-safe start</StatusBadge>
-                      </div>
-                      <p className="mt-3 text-sm font-medium">{row.start}</p>
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{row.cap}</p>
                     </div>
                   ))}
                 </div>

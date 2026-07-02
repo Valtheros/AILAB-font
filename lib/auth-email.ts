@@ -68,6 +68,9 @@ async function sendViaSmtp(email: AuthEmail) {
       user: smtpUser,
       pass: smtpPassword,
     },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
   });
 
   await transporter.sendMail({
@@ -91,8 +94,20 @@ async function sendAuthEmail(email: AuthEmail) {
     );
   }
 
-  if (hasSmtpConfig) {
+  if (!hasSmtpConfig) {
+    return;
+  }
+
+  try {
     await sendViaSmtp(email);
+  } catch (error) {
+    if (!shouldLogAuthEmails) {
+      throw error;
+    }
+
+    console.error("[auth-email] SMTP delivery failed; using logged link fallback", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
