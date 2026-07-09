@@ -1,19 +1,22 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
+import { ThemeProvider } from "@/components/theme-provider";
+import { LanguageProvider } from "@/components/language-provider";
+import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n";
+import "@fontsource/ibm-plex-sans-thai/400.css";
+import "@fontsource/ibm-plex-sans-thai/500.css";
+import "@fontsource/ibm-plex-sans-thai/600.css";
+import "@fontsource/ibm-plex-sans-thai/700.css";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+type ThemeName = "light" | "dark";
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+function resolveTheme(value: string | undefined): ThemeName {
+  return value === "light" ? "light" : "dark";
+}
 
 export const metadata: Metadata = {
-  title: "Train - AI Training Platform",
+  title: "AILAB - AI Training Platform",
   description:
     "Train AI models easily with a visual interface. No coding required.",
   keywords: [
@@ -25,17 +28,26 @@ export const metadata: Metadata = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const initialTheme = resolveTheme(cookieStore.get("theme")?.value);
+  const initialLanguage = resolveLanguage(cookieStore.get(LANGUAGE_COOKIE)?.value);
+
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+    <html
+      className={initialTheme}
+      lang={initialLanguage}
+      style={{ colorScheme: initialTheme }}
+      suppressHydrationWarning
+    >
+      <body className="antialiased">
+        <LanguageProvider defaultLanguage={initialLanguage}>
+          <ThemeProvider defaultTheme={initialTheme}>{children}</ThemeProvider>
+        </LanguageProvider>
       </body>
     </html>
   );
