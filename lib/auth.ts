@@ -38,6 +38,10 @@ assertAuthEmailDeliveryConfigured();
 export const auth = betterAuth({
   baseURL: appUrl,
   database: authDatabasePool,
+  session: {
+    expiresIn: 60 * 60 * 24,
+    updateAge: 60 * 60 * 24,
+  },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
