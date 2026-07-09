@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { emailOTP } from "better-auth/plugins";
+import { admin, emailOTP } from "better-auth/plugins";
 import {
   assertAuthEmailDeliveryConfigured,
   sendEmailVerificationLink,
@@ -46,6 +46,15 @@ export const auth = betterAuth({
     enabled: true,
     requireEmailVerification: true,
     revokeSessionsOnPasswordReset: true,
+    customSyntheticUser: ({ coreFields, additionalFields, id }) => ({
+      ...coreFields,
+      role: "user",
+      banned: false,
+      banReason: null,
+      banExpires: null,
+      ...additionalFields,
+      id,
+    }),
   },
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
@@ -60,6 +69,10 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
   },
   plugins: [
+    admin({
+      adminRoles: ["admin"],
+      defaultRole: "user",
+    }),
     emailOTP({
       allowedAttempts: 3,
       expiresIn: 300,
