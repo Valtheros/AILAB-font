@@ -57,12 +57,12 @@ async function getAdminUsers({ limit, offset, search }: { limit: number; offset:
           (
             select count(*)::int
             from datasets d
-            where d.created_by in (u.id, u.email)
+            where d.owner_user_id = u.id and d.status <> 'deleted'
           ) as "datasetCount",
           (
             select count(*)::int
             from training_runs tr
-            where tr.created_by in (u.id, u.email)
+            where tr.owner_user_id = u.id
           ) as "trainingRunCount"
         from "user" u
         left join session s on s."userId" = u.id

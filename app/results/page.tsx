@@ -126,7 +126,9 @@ export default function ResultsPage() {
       setDeleteError("");
     } catch (error) {
       console.error("Failed to delete run:", error);
-      setDeleteError(`Could not delete ${projectName}. Check the backend and retry.`);
+      setDeleteError(
+        error instanceof Error ? error.message : `Could not delete ${projectName}. Check the backend and retry.`,
+      );
     } finally {
       setDeletingProject(null);
     }

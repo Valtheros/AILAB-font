@@ -21,6 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useLanguage } from "@/components/language-provider";
 import { authClient } from "@/lib/auth-client";
@@ -538,7 +539,7 @@ export function ForgotPasswordForm() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="forgot-password-new-password">New password</Label>
-              <Input
+              <PasswordInput
                 aria-describedby={
                   passwordErrors.newPassword
                     ? passwordErrorIds.newPassword
@@ -570,7 +571,6 @@ export function ForgotPasswordForm() {
                   }
                 }}
                 placeholder="At least 8 characters"
-                type="password"
                 value={newPassword}
               />
               <FieldError
@@ -582,7 +582,7 @@ export function ForgotPasswordForm() {
               <Label htmlFor="forgot-password-confirm-password">
                 Confirm new password
               </Label>
-              <Input
+              <PasswordInput
                 aria-describedby={
                   passwordErrors.confirmPassword
                     ? passwordErrorIds.confirmPassword
@@ -608,7 +608,6 @@ export function ForgotPasswordForm() {
                   clearPasswordFieldError("confirmPassword");
                 }}
                 placeholder="Repeat the new password"
-                type="password"
                 value={confirmPassword}
               />
               <FieldError

@@ -7,6 +7,9 @@ import { authDatabasePool } from "@/lib/auth-database";
 import { requireAdminForAction } from "@/lib/admin-auth";
 
 export type AdminActionResult = { ok: true; message: string } | { ok: false; message: string };
+export type ResourceImpactResult =
+  | { ok: true; workspaceMemberships: number; projects: number; datasets: number; runs: number; activeJobs: Array<{ run_slug: string; status: string }>; totalBytes: number }
+  | { ok: false; message: string };
 
 function ok(message: string): AdminActionResult {
   return { ok: true, message };
@@ -18,6 +21,20 @@ function fail(error: unknown): AdminActionResult {
 
 function revalidateAdminUsers() {
   revalidatePath("/admin/users");
+}
+
+async function backendAdminRequest(path: string, init?: RequestInit) {
+  const session = await requireAdminForAction();
+  const base = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000";
+  const requestHeaders = new Headers(init?.headers);
+  requestHeaders.set("x-user-id", session.user.id);
+  requestHeaders.set("x-user-email", session.user.email);
+  requestHeaders.set("x-internal-token", process.env.BACKEND_INTERNAL_TOKEN ?? "");
+  if (init?.body) requestHeaders.set("content-type", "application/json");
+  const response = await fetch(`${base.replace(/\/$/, "")}${path}`, { ...init, headers: requestHeaders, cache: "no-store" });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || `Backend request failed with status ${response.status}`);
+  return data;
 }
 
 async function ensureTargetExists(userId: string) {
@@ -49,12 +66,12 @@ async function getUserDeleteImpact(userId: string) {
         (
           select count(*)::int
           from datasets d
-          where d.created_by in (u.id, u.email)
+          where d.owner_user_id = u.id and d.status <> 'deleted'
         ) as datasets,
         (
           select count(*)::int
           from training_runs tr
-          where tr.created_by in (u.id, u.email)
+          where tr.owner_user_id = u.id
         ) as "trainingRuns"
       from "user" u
       where u.id = $1
@@ -155,7 +172,7 @@ export async function revokeUserSessionsAction(userId: string): Promise<AdminAct
   }
 }
 
-export async function removeUserAction(userId: string, acknowledgeImpact = false): Promise<AdminActionResult> {
+export async function removeUserAction(userId: string): Promise<AdminActionResult> {
   try {
     const session = await requireAdminForAction();
     await ensureTargetExists(userId);
@@ -165,15 +182,58 @@ export async function removeUserAction(userId: string, acknowledgeImpact = false
     }
 
     const impact = await getUserDeleteImpact(userId);
-    if (impact.total > 0 && !acknowledgeImpact) {
-      throw new Error(
-        `This user still has ${impact.total} linked workspace record(s). Review the delete warning before removing the user.`,
-      );
-    }
+    if (impact.total > 0) throw new Error("This user still owns resources. Disable, transfer, or delete their data first.");
 
     await authDatabasePool.query('delete from "user" where id = $1', [userId]);
     revalidateAdminUsers();
     return ok("User removed.");
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function getUserResourceImpactAction(userId: string): Promise<ResourceImpactResult> {
+  try {
+    await ensureTargetExists(userId);
+    const data = await backendAdminRequest(`/api/admin/users/${encodeURIComponent(userId)}/resource-impact`);
+    return { ok: true, workspaceMemberships: data.workspaceMemberships ?? 0, projects: data.projects ?? 0, datasets: data.datasets ?? 0, runs: data.runs ?? 0, activeJobs: data.activeJobs ?? [], totalBytes: data.totalBytes ?? 0 };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function disableUserAction(userId: string): Promise<AdminActionResult> {
+  return setUserBanAction(userId, true, "Account disabled pending resource cleanup");
+}
+
+export async function transferUserResourcesAction(userId: string, targetUserId: string): Promise<AdminActionResult> {
+  try {
+    await ensureTargetExists(userId);
+    await ensureTargetExists(targetUserId);
+    const data = await backendAdminRequest(`/api/admin/users/${encodeURIComponent(userId)}/transfer-resources`, {
+      method: "POST", body: JSON.stringify({ targetUserId }),
+    });
+    revalidateAdminUsers();
+    return ok(`Transferred ${data.datasets ?? 0} dataset(s), ${data.runs ?? 0} run(s), and ${data.projects ?? 0} project(s).`);
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function deleteUserAndDataAction(userId: string): Promise<AdminActionResult> {
+  try {
+    const session = await requireAdminForAction();
+    if (session.user.id === userId) throw new Error("You cannot remove your own account.");
+    await ensureTargetExists(userId);
+    await authDatabasePool.query(
+      'update "user" set banned = true, "banReason" = $2, "banExpires" = null, "updatedAt" = now() where id = $1',
+      [userId, "Account disabled during resource cleanup"],
+    );
+    await authDatabasePool.query('delete from session where "userId" = $1', [userId]);
+    await backendAdminRequest(`/api/admin/users/${encodeURIComponent(userId)}/resources`, { method: "DELETE" });
+    await authDatabasePool.query('delete from "user" where id = $1', [userId]);
+    revalidateAdminUsers();
+    return ok("User and owned data removed.");
   } catch (error) {
     return fail(error);
   }

@@ -31,7 +31,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -170,14 +169,29 @@ export default function TrainingPage() {
     );
   }, [latestMetrics]);
 
-  const chartKeys = metricKeys.filter(
-    (key) =>
-      key.includes("loss") ||
-      key.includes("accuracy") ||
-      key.includes("mAP") ||
-      key.includes("precision") ||
-      key.includes("recall"),
+  const lossChartKeys = metricKeys.filter((key) =>
+    key.toLowerCase().includes("loss"),
   );
+  const scoreChartKeys = metricKeys.filter((key) => {
+    const normalized = key.toLowerCase();
+    return ["accuracy", "map", "precision", "recall"].some((metric) =>
+      normalized.includes(metric),
+    );
+  });
+  const chartGroups = [
+    {
+      title: "Quality Metrics",
+      description: t("training.chart.qualityDescription"),
+      keys: scoreChartKeys,
+      domain: [0, 1] as [number, number],
+    },
+    {
+      title: "Loss",
+      description: t("training.chart.lossDescription"),
+      keys: lossChartKeys,
+      domain: undefined,
+    },
+  ].filter((group) => group.keys.length > 0);
 
   const selectedDeviceLabel =
     deviceOptions.find((option) => option.value === config.device)?.label ??
@@ -223,8 +237,8 @@ export default function TrainingPage() {
     setIsStopping(false);
     setRunError("");
     setStreamError("");
-    setStatus("queued");
-    setLogs("Submitting training job...\n");
+    setStatus("preparing");
+    setLogs("Preparing dataset and submitting training job...\n");
     setMetricsHistory([]);
     setProjectName(generatedProjectName);
 
@@ -263,6 +277,7 @@ export default function TrainingPage() {
       const nextJobId = data.job_id ?? data.container_id;
       if (!nextJobId) throw new Error("Backend did not return a job ID");
       setJobId(nextJobId);
+      setStatus("queued");
       sessionStorage.setItem(
         ACTIVE_JOB_KEY,
         JSON.stringify({ jobId: nextJobId, projectName: generatedProjectName }),
@@ -297,11 +312,8 @@ Stop requested for job ${jobId}.
       if (!response.ok) {
         throw new Error(data.detail || "Failed to stop training");
       }
-      sessionStorage.removeItem(ACTIVE_JOB_KEY);
-      setIsTraining(false);
-      setJobId(null);
-      setProjectName(null);
-      setStatus(data.status && data.status !== "success" ? data.status : "stopped");
+      setStatus(data.status || "stopping");
+      setIsTraining(true);
       setLogs((previous) => `${previous}Stop accepted by backend.
 `);
     } catch (error) {
@@ -342,7 +354,7 @@ Stop requested for job ${jobId}.
         setJobId(active.jobId);
         setProjectName(active.projectName ?? null);
         setStatus(nextStatus);
-        setIsTraining(["queued", "running"].includes(nextStatus));
+        setIsTraining(["queued", "running", "started", "stopping"].includes(nextStatus));
       } catch {
         sessionStorage.removeItem(ACTIVE_JOB_KEY);
       }
@@ -353,6 +365,31 @@ Stop requested for job ${jobId}.
       cancelled = true;
     };
   }, [didReadUrlMode, isReviewMode]);
+
+  useEffect(() => {
+    if (!didReadUrlMode || isReviewMode || jobId) return;
+    let cancelled = false;
+    fetch(`${API_URL}/api/runs`)
+      .then((response) => (response.ok ? response.json() : { runs: [] }))
+      .then((data: { runs?: Array<{ job_id?: string; project_name?: string; status?: string }> }) => {
+        const active = data.runs?.find(
+          (run) => run.job_id && ["queued", "running", "started", "stopping"].includes(run.status || ""),
+        );
+        if (cancelled || !active?.job_id) return;
+        setJobId(active.job_id);
+        setProjectName(active.project_name || null);
+        setStatus(active.status || "queued");
+        setIsTraining(true);
+        sessionStorage.setItem(
+          ACTIVE_JOB_KEY,
+          JSON.stringify({ jobId: active.job_id, projectName: active.project_name }),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [didReadUrlMode, isReviewMode, jobId]);
 
   useEffect(() => {
     fetch(`${API_URL}/api/model-catalog`)
@@ -414,6 +451,12 @@ Stop requested for job ${jobId}.
     }
   }, [logs]);
 
+  useEffect(() => {
+    if (logs.includes("[Dataset warning]")) {
+      setShowLogs(true);
+    }
+  }, [logs]);
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -422,22 +465,14 @@ Stop requested for job ${jobId}.
           title="Training Monitor"
           description={t("training.header.description")}
           actions={
-            <>
-              {!isTraining && (
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/config">
-                    <Settings className="h-4 w-4" />
-                    Edit Config
-                  </Link>
-                </Button>
-              )}
-              {isTraining && (
-                <Button variant="destructive" onClick={stopTraining} disabled={isStopping}>
-                  <Square className="h-4 w-4" />
-                  {isStopping ? "Stopping..." : "Stop Run"}
-                </Button>
-              )}
-            </>
+            !isTraining ? (
+              <Button asChild size="sm" variant="outline">
+                <Link href="/config">
+                  <Settings className="h-4 w-4" />
+                  Edit Config
+                </Link>
+              </Button>
+            ) : undefined
           }
         />
 
@@ -544,6 +579,9 @@ Stop requested for job ${jobId}.
                 </p>
                 <StatusBadge tone={statusTone(status)}>{status}</StatusBadge>
                 {streamError && <StatusBadge tone="warning">{streamError}</StatusBadge>}
+                {logs.includes("[Dataset warning]") && (
+                  <StatusBadge tone="warning">Dataset warning</StatusBadge>
+                )}
               </div>
               <p className="mt-1 break-words text-sm text-muted-foreground">
                 Project: {projectName ?? "-"} | Job: {jobId ?? "-"}
@@ -622,30 +660,32 @@ Stop requested for job ${jobId}.
               </Card>
             </div>
 
-            {metricsHistory.length > 0 && chartKeys.length > 0 && (
-              <Card>
+            {metricsHistory.length > 0 && chartGroups.map((group) => (
+              <Card key={group.title}>
                 <CardHeader>
-                  <CardTitle>Metrics</CardTitle>
-                  <CardDescription>
-                    {t("training.chart.description")}
-                  </CardDescription>
+                  <CardTitle>{group.title}</CardTitle>
+                  <CardDescription>{group.description}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[320px] w-full">
+                  <div className="h-[260px] w-full sm:h-[320px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart
                         data={metricsHistory}
                         margin={{ top: 5, right: 24, left: 0, bottom: 5 }}
                       >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          className="stroke-border"
-                        />
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                         <XAxis dataKey="epoch" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        {chartKeys.slice(0, 6).map((key, index) => (
+                        <YAxis domain={group.domain} />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "var(--popover)",
+                            borderColor: "var(--border)",
+                            color: "var(--popover-foreground)",
+                          }}
+                          itemStyle={{ color: "var(--popover-foreground)" }}
+                          labelStyle={{ color: "var(--popover-foreground)" }}
+                        />
+                        {group.keys.slice(0, 6).map((key, index) => (
                           <Line
                             key={key}
                             type="monotone"
@@ -659,9 +699,20 @@ Stop requested for job ${jobId}.
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
+                    {group.keys.slice(0, 6).map((key, index) => (
+                      <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground" key={key}>
+                        <span
+                          className="h-0.5 w-4 shrink-0"
+                          style={{ backgroundColor: metricStrokes[index % metricStrokes.length] }}
+                        />
+                        <span className="break-all">{key}</span>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
-            )}
+            ))}
           </>
         )}
 
