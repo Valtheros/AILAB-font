@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useLanguage } from "@/components/language-provider";
 import { Switch } from "@/components/ui/switch";
@@ -194,7 +194,7 @@ export function ChangePasswordForm() {
         <form className="grid max-w-xl gap-4" noValidate onSubmit={onSubmit}>
           <div className="grid gap-2">
             <Label htmlFor="currentPassword">Current password</Label>
-            <Input
+            <PasswordInput
               aria-describedby={
                 fieldErrors.currentPassword
                   ? fieldErrorIds.currentPassword
@@ -221,7 +221,6 @@ export function ChangePasswordForm() {
                 clearFieldError("currentPassword");
               }}
               placeholder="Your current password"
-              type="password"
               value={currentPassword}
             />
             <FieldError
@@ -232,7 +231,7 @@ export function ChangePasswordForm() {
 
           <div className="grid gap-2">
             <Label htmlFor="newPassword">New password</Label>
-            <Input
+            <PasswordInput
               aria-describedby={
                 fieldErrors.newPassword ? fieldErrorIds.newPassword : undefined
               }
@@ -257,7 +256,6 @@ export function ChangePasswordForm() {
                 }
               }}
               placeholder="At least 8 characters"
-              type="password"
               value={newPassword}
             />
             <FieldError
@@ -268,7 +266,7 @@ export function ChangePasswordForm() {
 
           <div className="grid gap-2">
             <Label htmlFor="confirmPassword">Confirm new password</Label>
-            <Input
+            <PasswordInput
               aria-describedby={
                 fieldErrors.confirmPassword
                   ? fieldErrorIds.confirmPassword
@@ -295,7 +293,6 @@ export function ChangePasswordForm() {
                 clearFieldError("confirmPassword");
               }}
               placeholder="Repeat the new password"
-              type="password"
               value={confirmPassword}
             />
             <FieldError

@@ -3,6 +3,7 @@ import { authDatabasePool } from "@/lib/auth-database";
 type RateLimitBucket = {
   count: number;
   resetAt: number;
+  touchedAt: number;
 };
 
 type RateLimitOptions = {
@@ -31,6 +32,23 @@ const buckets =
 globalForRateLimit.ailabRateLimitBuckets = buckets;
 
 let databaseReady: Promise<void> | null = null;
+let nextDatabaseAttemptAt = 0;
+let lastCleanupAt = 0;
+let fallbackLogged = false;
+const MAX_MEMORY_BUCKETS = 10_000;
+const CLEANUP_INTERVAL_MS = 60_000;
+const DATABASE_RETRY_MS = 5_000;
+
+function cleanupMemoryBuckets(now: number) {
+  if (now - lastCleanupAt < CLEANUP_INTERVAL_MS && buckets.size < MAX_MEMORY_BUCKETS) return;
+  lastCleanupAt = now;
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) buckets.delete(key);
+  }
+  if (buckets.size < MAX_MEMORY_BUCKETS) return;
+  const oldest = [...buckets.entries()].sort((left, right) => left[1].touchedAt - right[1].touchedAt);
+  for (const [key] of oldest.slice(0, buckets.size - MAX_MEMORY_BUCKETS + 1)) buckets.delete(key);
+}
 
 function memoryRateLimit({
   key,
@@ -38,12 +56,14 @@ function memoryRateLimit({
   windowMs,
 }: RateLimitOptions): RateLimitResult {
   const now = Date.now();
+  cleanupMemoryBuckets(now);
   const bucket = buckets.get(key);
 
   if (!bucket || bucket.resetAt <= now) {
     buckets.set(key, {
       count: 1,
       resetAt: now + windowMs,
+      touchedAt: now,
     });
     return { limited: false, retryAfter: 0 };
   }
@@ -56,10 +76,12 @@ function memoryRateLimit({
   }
 
   bucket.count += 1;
+  bucket.touchedAt = now;
   return { limited: false, retryAfter: 0 };
 }
 
 async function ensureDatabaseTable() {
+  if (Date.now() < nextDatabaseAttemptAt) throw new Error("Rate-limit database retry is cooling down");
   databaseReady ??= authDatabasePool
     .query(`
       create table if not exists ailab_rate_limit (
@@ -68,7 +90,15 @@ async function ensureDatabaseTable() {
         reset_at timestamptz not null
       )
     `)
-    .then(() => undefined);
+    .then(() => {
+      fallbackLogged = false;
+      return undefined;
+    })
+    .catch((error) => {
+      databaseReady = null;
+      nextDatabaseAttemptAt = Date.now() + DATABASE_RETRY_MS;
+      throw error;
+    });
   return databaseReady;
 }
 
@@ -111,8 +141,15 @@ export async function checkRateLimit(options: RateLimitOptions): Promise<RateLim
   }
 
   try {
-    return await databaseRateLimit(options);
-  } catch {
+    const result = await databaseRateLimit(options);
+    if (fallbackLogged) console.info("Rate limiter reconnected to PostgreSQL.");
+    fallbackLogged = false;
+    return result;
+  } catch (error) {
+    if (!fallbackLogged) {
+      console.warn("Rate limiter is using bounded memory fallback; PostgreSQL will be retried.", error);
+      fallbackLogged = true;
+    }
     return memoryRateLimit(options);
   }
 }

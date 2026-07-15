@@ -475,8 +475,8 @@ export default function ConfigPage() {
           {datasetError && <StatusBadge tone="warning">{datasetError}</StatusBadge>}
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
-          <aside className="space-y-4">
+        <div className="grid min-w-0 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="min-w-0 space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -564,53 +564,41 @@ export default function ConfigPage() {
                     {t("config.dataset.trainExport").replace("{exportFormat}", exportFormatLabel)}
                   </p>
                 </div>
-                {compatibleDatasets.length > 0 ? (
-                  <Select
-                    value={config.datasetName}
-                    onValueChange={(value) => updateConfig("datasetName", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select dataset" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {compatibleDatasets.map((dataset) => (
-                        <SelectItem key={dataset.id} value={dataset.name}>
-                          {dataset.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className="flex min-h-12 items-center rounded-lg border border-dashed border-border bg-background/70 px-3 text-sm text-muted-foreground">
-                    No compatible dataset
-                  </div>
-                )}
-
                 <div className="space-y-2">
-                  {compatibleDatasets.map((dataset) => (
-                    <div
-                      key={dataset.id}
-                      className="rounded-lg border border-border bg-background/70 p-3 text-sm"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="break-words font-medium">{dataset.name}</span>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {selectedDataset?.name === dataset.name && (
-                            <StatusBadge tone="success">Selected</StatusBadge>
-                          )}
-                          <span className="text-xs text-muted-foreground">
-                            {dataset.size}
-                          </span>
+                  {compatibleDatasets.map((dataset) => {
+                    const selected = selectedDataset?.name === dataset.name;
+                    return (
+                      <button
+                        aria-pressed={selected}
+                        key={dataset.id}
+                        type="button"
+                        onClick={() => updateConfig("datasetName", dataset.name)}
+                        className={`w-full rounded-lg border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          selected
+                            ? "border-foreground bg-accent"
+                            : "border-border bg-background/70 hover:bg-accent/60"
+                        }`}
+                      >
+                        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                          <span className="min-w-0 break-all font-medium sm:break-words">{dataset.name}</span>
+                          <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
+                            {selected && (
+                              <StatusBadge tone="success">Selected</StatusBadge>
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              {dataset.size}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {dataset.images.toLocaleString()} images - {formatLabel(dataset.datasetTask ?? dataset.canonicalTask)} - {formatLabel(dataset.canonicalFormat)}
-                        {dataset.paddleocrTasks?.length
-                          ? ` - OCR: ${dataset.paddleocrTasks.join(", ")}`
-                          : ""}
-                      </p>
-                    </div>
-                  ))}
+                        <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+                          {dataset.images.toLocaleString()} images - {formatLabel(dataset.datasetTask ?? dataset.canonicalTask)} - {formatLabel(dataset.canonicalFormat)}
+                          {dataset.paddleocrTasks?.length
+                            ? ` - OCR: ${dataset.paddleocrTasks.join(", ")}`
+                            : ""}
+                        </p>
+                      </button>
+                    );
+                  })}
                   {compatibleDatasets.length === 0 && (
                     <div className="rounded-lg border border-dashed border-border bg-background/70 p-3">
                       <StatusBadge tone="warning">No compatible dataset</StatusBadge>
@@ -624,7 +612,7 @@ export default function ConfigPage() {
             </Card>
           </aside>
 
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
