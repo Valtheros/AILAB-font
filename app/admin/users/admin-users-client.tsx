@@ -19,6 +19,7 @@ import { authClient } from "@/lib/auth-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,11 +43,15 @@ import { StatusBadge } from "@/components/workspace/status-badge";
 import { cn } from "@/lib/utils";
 import {
   removeUserAction,
+  deleteUserAndDataAction,
+  disableUserAction,
+  getUserResourceImpactAction,
   revokeUserSessionsAction,
   setEmailVerifiedAction,
   setUserBanAction,
   setUserPasswordAction,
   setUserRoleAction,
+  transferUserResourcesAction,
   type AdminActionResult,
 } from "./actions";
 
@@ -87,12 +92,18 @@ type ConfirmAction = {
 
 type BanDialogState = { user: AdminUserRow; reason: string } | null;
 type PasswordDialogState = { user: AdminUserRow; password: string } | null;
+type CleanupDialogState = {
+  user: AdminUserRow;
+  impact: { workspaceMemberships: number; projects: number; datasets: number; runs: number; activeJobs: Array<{ run_slug: string; status: string }>; totalBytes: number };
+  targetUserId: string;
+} | null;
 
 type UserActionHandlers = {
   isPending: boolean;
   openBanDialog: (user: AdminUserRow) => void;
   openConfirm: (action: ConfirmAction) => void;
   openPasswordDialog: (user: AdminUserRow) => void;
+  openCleanupDialog: (user: AdminUserRow) => void;
   runAction: (action: () => Promise<AdminActionResult>, afterSuccess?: () => void) => void;
 };
 
@@ -140,7 +151,7 @@ function UserActionButtons({
   isSelf: boolean;
   user: AdminUserRow;
 }) {
-  const { isPending, openBanDialog, openConfirm, openPasswordDialog, runAction } = handlers;
+  const { isPending, openBanDialog, openConfirm, openPasswordDialog, openCleanupDialog, runAction } = handlers;
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
@@ -248,16 +259,8 @@ function UserActionButtons({
         className={cn("w-full sm:w-auto", isSelf && "opacity-50")}
         disabled={isPending || isSelf}
         onClick={() => {
-          const hasLinkedData = userDeleteImpactTotal(user) > 0;
-          openConfirm({
-            action: () => removeUserAction(user.id, hasLinkedData),
-            confirmLabel: hasLinkedData ? "Remove user anyway" : "Remove user",
-            description: userDeleteDescription(user),
-            destructive: true,
-            title: hasLinkedData
-              ? `Remove ${user.email} with linked workspace data?`
-              : `Remove ${user.email}?`,
-          });
+          if (userDeleteImpactTotal(user) > 0) openCleanupDialog(user);
+          else openConfirm({ action: () => removeUserAction(user.id), confirmLabel: "Remove user", description: userDeleteDescription(user), destructive: true, title: `Remove ${user.email}?` });
         }}
         size="sm"
         variant="destructive"
@@ -283,6 +286,7 @@ export function AdminUsersClient({
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [banDialog, setBanDialog] = useState<BanDialogState>(null);
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialogState>(null);
+  const [cleanupDialog, setCleanupDialog] = useState<CleanupDialogState>(null);
   const [isPending, startTransition] = useTransition();
 
   const page = Math.floor(offset / limit) + 1;
@@ -335,6 +339,14 @@ export function AdminUsersClient({
     openBanDialog: (user) => setBanDialog({ user, reason: "Banned by admin" }),
     openConfirm: setConfirmAction,
     openPasswordDialog: (user) => setPasswordDialog({ user, password: "" }),
+    openCleanupDialog: (user) => {
+      setMessage("");
+      startTransition(async () => {
+        const result = await getUserResourceImpactAction(user.id);
+        if (!result.ok) return setMessage(result.message);
+        setCleanupDialog({ user, impact: result, targetUserId: "" });
+      });
+    },
     runAction,
   };
 
@@ -586,14 +598,14 @@ export function AdminUsersClient({
             </DialogHeader>
             <div className="py-4">
               <label className="text-sm font-medium" htmlFor="new-password">New password</label>
-              <Input
-                className="mt-2"
-                id="new-password"
-                minLength={8}
-                onChange={(event) => setPasswordDialog((state) => state ? { ...state, password: event.target.value } : state)}
-                type="password"
-                value={passwordDialog?.password ?? ""}
-              />
+              <div className="mt-2">
+                <PasswordInput
+                  id="new-password"
+                  minLength={8}
+                  onChange={(event) => setPasswordDialog((state) => state ? { ...state, password: event.target.value } : state)}
+                  value={passwordDialog?.password ?? ""}
+                />
+              </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
@@ -604,6 +616,36 @@ export function AdminUsersClient({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(cleanupDialog)} onOpenChange={(open) => !open && setCleanupDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage data for {cleanupDialog?.user.email}</DialogTitle>
+            <DialogDescription>
+              This account owns {cleanupDialog?.impact.datasets ?? 0} dataset(s), {cleanupDialog?.impact.runs ?? 0} run(s), and {((cleanupDialog?.impact.totalBytes ?? 0) / 1024 / 1024).toFixed(1)} MB on disk.
+              {` Projects: ${cleanupDialog?.impact.projects ?? 0}. Workspace memberships: ${cleanupDialog?.impact.workspaceMemberships ?? 0}.`}
+              {(cleanupDialog?.impact.activeJobs.length ?? 0) > 0 && ` Active jobs: ${cleanupDialog?.impact.activeJobs.map((job) => `${job.run_slug} (${job.status})`).join(", ")}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <Button className="w-full justify-start" disabled={isPending} onClick={() => runAction(() => disableUserAction(cleanupDialog!.user.id), () => setCleanupDialog(null))} variant="outline">
+              <Ban className="h-4 w-4" /> Disable account and keep data
+            </Button>
+            <div className="flex gap-2">
+              <Input placeholder="Target user ID" value={cleanupDialog?.targetUserId ?? ""} onChange={(event) => setCleanupDialog((state) => state ? { ...state, targetUserId: event.target.value } : state)} />
+              <Button disabled={isPending || !cleanupDialog?.targetUserId.trim() || (cleanupDialog?.impact.activeJobs.length ?? 0) > 0} onClick={() => runAction(() => transferUserResourcesAction(cleanupDialog!.user.id, cleanupDialog!.targetUserId.trim()), () => setCleanupDialog(null))} variant="outline">
+                Transfer
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button disabled={isPending} variant="outline">Cancel</Button></DialogClose>
+            <Button disabled={isPending} onClick={() => runAction(() => deleteUserAndDataAction(cleanupDialog!.user.id), () => setCleanupDialog(null))} variant="destructive">
+              <Trash2 className="h-4 w-4" /> Delete account and data
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

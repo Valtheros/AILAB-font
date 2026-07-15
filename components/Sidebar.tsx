@@ -26,14 +26,14 @@ const navItems = [
     icon: LayoutDashboard,
   },
   {
-    title: "Dataset",
-    href: "/dataset",
-    icon: Database,
-  },
-  {
     title: "Guide",
     href: "/guide",
     icon: BookOpenCheck,
+  },
+  {
+    title: "Dataset",
+    href: "/dataset",
+    icon: Database,
   },
   {
     title: "Configuration",

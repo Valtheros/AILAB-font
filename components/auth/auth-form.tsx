@@ -14,7 +14,18 @@ import {
 } from "@/components/ui/card";
 import { FieldError } from "@/components/auth/field-error";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useLanguage } from "@/components/language-provider";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -76,6 +87,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [isResendingVerification, setIsResendingVerification] = useState(false);
+  const [showResendConfirm, setShowResendConfirm] = useState(false);
   const isSignup = mode === "signup";
   const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
   const signupAwaitingVerification = isSignup && Boolean(verificationEmail);
@@ -214,9 +226,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
       }
 
       setVerificationEmail(parsedEmail.data);
-      setVerificationMessage(
-        "We sent a fresh verification link. Check your inbox."
-      );
+      setVerificationMessage("auth.verification.resent");
     } catch (authError) {
       setError(
         authError instanceof Error
@@ -258,9 +268,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
       if (result.error) {
         if (!isSignup && isEmailNotVerifiedError(result.error)) {
           setVerificationEmail((values as LoginValues).email);
-          setVerificationMessage(
-            "This email still needs verification. We sent another link if the account exists."
-          );
+          setVerificationMessage("auth.verification.required");
           setPassword("");
           clearFieldError("password");
           return;
@@ -271,9 +279,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
 
       if (isSignup) {
         setVerificationEmail((values as SignupValues).email);
-        setVerificationMessage(
-          "Check your inbox for a verification link before signing in."
-        );
+        setVerificationMessage("auth.verification.signup");
         setPassword("");
         return;
       }
@@ -323,7 +329,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
             <div className="flex items-start gap-3">
               <MailCheck className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="min-w-0 flex-1">
-                <p className="font-medium">{verificationMessage}</p>
+                <p className="font-medium">{t(verificationMessage)}</p>
                 {verificationEmail && (
                   <p className="mt-1 break-all text-xs opacity-80">
                     {verificationEmail}
@@ -335,7 +341,8 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button
                   disabled={isResendingVerification}
-                  onClick={() => resendVerificationEmail()}
+                  onClick={() => setShowResendConfirm(true)}
+                  className="text-white hover:text-white"
                   size="sm"
                   type="button"
                   variant="outline"
@@ -347,24 +354,33 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
                   )}
                   Resend link
                 </Button>
-                {signupAwaitingVerification && (
-                  <Button
-                    onClick={() => {
-                      setVerificationEmail("");
-                      setVerificationMessage("");
-                      setError("");
-                    }}
-                    size="sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    Use another email
-                  </Button>
-                )}
               </div>
             )}
           </div>
         )}
+        <AlertDialog
+          open={showResendConfirm}
+          onOpenChange={setShowResendConfirm}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Check Spam or Junk first
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("auth.verification.resendConfirm")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => void resendVerificationEmail()}
+              >
+                Resend link
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         {error && (
           <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}
@@ -436,7 +452,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">Password</Label>
-              <Input
+              <PasswordInput
                 aria-describedby={
                   fieldErrors.password ? fieldErrorIds.password : undefined
                 }
@@ -459,7 +475,6 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
                 }}
                 placeholder="At least 8 characters"
                 required
-                type="password"
                 value={password}
               />
               <FieldError

@@ -12,6 +12,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/workspace/empty-state";
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
@@ -105,6 +112,10 @@ interface Dataset {
   exportCache?: ExportCacheEntry[];
 }
 
+function datasetClassNames(dataset: Dataset) {
+  return dataset.classes.filter((className) => !/^\d+$/.test(className.trim()));
+}
+
 const API_URL = apiBaseUrl();
 
 function formatLabel(value?: string) {
@@ -141,11 +152,13 @@ export default function DatasetPage() {
   >("idle");
   const [uploadMessage, setUploadMessage] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingUploadToken, setPendingUploadToken] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<{ datasetName: string; profile: ImportProfile } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [classDialog, setClassDialog] = useState<{ name: string; classes: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDatasets = useCallback(async () => {
@@ -213,6 +226,7 @@ export default function DatasetPage() {
     }
 
     setPendingFile(file);
+    setPendingUploadToken(null);
     setImportPreview(null);
     setIsUploading(true);
     setUploadStatus("uploading");
@@ -220,17 +234,19 @@ export default function DatasetPage() {
     setUploadMessage(`Inspecting ${file.name}...`);
 
     try {
-      const result = await sendDatasetZip<{ dataset_name: string; profile: ImportProfile }>(
+      const result = await sendDatasetZip<{ dataset_name: string; profile: ImportProfile; uploadToken: string }>(
         file,
         "/api/datasets/inspect-upload",
         "Dataset inspection",
       );
       setImportPreview({ datasetName: result.dataset_name, profile: result.profile });
+      setPendingUploadToken(result.uploadToken);
       setUploadStatus("success");
       setUploadProgress(100);
       setUploadMessage(`${result.dataset_name} is ready to import.`);
     } catch (error) {
       setPendingFile(null);
+      setPendingUploadToken(null);
       setUploadStatus("error");
       setUploadMessage(normalizeUploadMessage(error instanceof Error ? error.message : "Inspection failed"));
     } finally {
@@ -239,24 +255,29 @@ export default function DatasetPage() {
   };
 
   const importFile = async () => {
-    if (!pendingFile) return;
+    if (!pendingFile || !pendingUploadToken) return;
     setIsUploading(true);
     setUploadStatus("uploading");
     setUploadProgress(0);
     setUploadMessage(`Importing ${pendingFile.name}...`);
 
     try {
-      const result = await sendDatasetZip<{ dataset_name: string; tasks?: string[] }>(
-        pendingFile,
-        "/api/datasets/import",
-        "Dataset import",
+      const response = await fetch(`${API_URL}/api/datasets/import`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ uploadToken: pendingUploadToken }),
+      });
+      const result = parseJsonText<{ dataset_name?: string; tasks?: string[]; detail?: string }>(
+        await response.text(), "Dataset import returned an invalid response",
       );
+      if (!response.ok || !result.dataset_name) throw new Error(result.detail || `Dataset import failed with status ${response.status}`);
       setUploadStatus("success");
       setUploadProgress(100);
       setUploadMessage(
         `${result.dataset_name} imported. Detected: ${(result.tasks ?? []).join(", ") || "dataset"}`,
       );
       setPendingFile(null);
+      setPendingUploadToken(null);
       setImportPreview(null);
       await fetchDatasets();
       setTimeout(() => {
@@ -279,14 +300,17 @@ export default function DatasetPage() {
         { method: "DELETE" },
       );
       if (!response.ok) {
-        throw new Error(`Delete failed with status ${response.status}`);
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `Delete failed with status ${response.status}`);
       }
       setDeleteError("");
       setDeleteConfirm(null);
       await fetchDatasets();
     } catch (error) {
       console.error("Failed to delete dataset:", error);
-      setDeleteError(`Could not delete ${datasetName}. Check the backend and retry.`);
+      setDeleteError(
+        error instanceof Error ? error.message : `Could not delete ${datasetName}. Check the backend and retry.`,
+      );
     }
   };
 
@@ -495,7 +519,7 @@ export default function DatasetPage() {
                     </div>
                   )}
                   <div className="flex flex-wrap gap-2">
-                    <Button onClick={importFile} disabled={isUploading || !pendingFile}>
+                    <Button onClick={importFile} disabled={isUploading || !pendingFile || !pendingUploadToken}>
                       <Upload className="h-4 w-4" />
                       Import dataset
                     </Button>
@@ -503,6 +527,7 @@ export default function DatasetPage() {
                       variant="outline"
                       onClick={() => {
                         setPendingFile(null);
+                        setPendingUploadToken(null);
                         setImportPreview(null);
                         setUploadStatus("idle");
                         setUploadMessage("");
@@ -586,23 +611,11 @@ export default function DatasetPage() {
                         <h2 className="break-words font-medium">{dataset.name}</h2>
                         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                           <span>{dataset.images.toLocaleString()} images</span>
-                          <span>{dataset.classes?.length ?? 0} classes</span>
                           <span>{dataset.size}</span>
                           <span>{dataset.createdAt}</span>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <StatusBadge tone="success">{formatLabel(dataset.datasetTask ?? dataset.canonicalTask)}</StatusBadge>
-                          {dataset.canonicalFormat && (
-                            <StatusBadge>{formatLabel(dataset.canonicalFormat)}</StatusBadge>
-                          )}
-                          {(dataset.datasetTasks ?? []).map((task) => (
-                            <StatusBadge key={task}>{formatLabel(task)}</StatusBadge>
-                          ))}
-                          {(dataset.formats ?? []).map((format) => (
-                            <Badge key={format} variant="secondary">
-                              {format}
-                            </Badge>
-                          ))}
                         </div>
                         {(dataset.readyModels?.length ?? 0) > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -610,15 +623,6 @@ export default function DatasetPage() {
                               <Badge key={`${dataset.id}-${model.task}-${model.id}`}>
                                 {model.label}
                               </Badge>
-                            ))}
-                          </div>
-                        )}
-                        {(dataset.exportCache?.length ?? 0) > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {dataset.exportCache?.slice(0, 3).map((entry) => (
-                              <StatusBadge key={`${entry.model}-${entry.fingerprint}`} tone="success">
-                                cached {entry.model}: {entry.export_format}
-                              </StatusBadge>
                             ))}
                           </div>
                         )}
@@ -632,10 +636,31 @@ export default function DatasetPage() {
                           </div>
                         )}
                         {dataset.classes?.length > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-1.5">
-                            {dataset.classes.slice(0, 10).map((className) => (
-                              <Badge key={className}>{className}</Badge>
-                            ))}
+                          <div className="mt-3">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              Classes ({datasetClassNames(dataset).length})
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {datasetClassNames(dataset)
+                                .slice(0, 10)
+                                .map((className) => (
+                                  <Badge key={className}>{className}</Badge>
+                                ))}
+                              {datasetClassNames(dataset).length > 10 && (
+                                <Button
+                                  className="h-auto px-1 py-0.5 text-xs"
+                                  onClick={() => setClassDialog({
+                                    name: dataset.name,
+                                    classes: datasetClassNames(dataset),
+                                  })}
+                                  size="sm"
+                                  type="button"
+                                  variant="ghost"
+                                >
+                                  +{datasetClassNames(dataset).length - 10} more
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -676,6 +701,24 @@ export default function DatasetPage() {
             )}
           </CardContent>
         </Card>
+        <Dialog open={classDialog !== null} onOpenChange={(open) => !open && setClassDialog(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{classDialog?.name} Classes</DialogTitle>
+              <DialogDescription>
+                {t("dataset.classes.dialogDescription").replace(
+                  "{count}",
+                  String(classDialog?.classes.length ?? 0),
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex max-h-[60vh] flex-wrap gap-2 overflow-y-auto pr-1">
+              {classDialog?.classes.map((className) => (
+                <Badge key={className}>{className}</Badge>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

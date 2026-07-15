@@ -13,6 +13,11 @@ import {
 import { EmptyState } from "@/components/workspace/empty-state";
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import {
+  MetricsCharts,
+  formatMetricValue,
+  type MetricRow,
+} from "@/components/workspace/metrics-charts";
 import { Download, FileText, History, RefreshCw, Trash2, Trophy, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
@@ -58,6 +63,7 @@ export default function ResultsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
+  const [metricsHistory, setMetricsHistory] = useState<MetricRow[]>([]);
 
   const fetchRuns = useCallback(async () => {
     setIsLoading(true);
@@ -98,6 +104,25 @@ export default function ResultsPage() {
     [runs, selectedProject],
   );
 
+  useEffect(() => {
+    if (!selectedRun) {
+      setMetricsHistory([]);
+      return;
+    }
+    const controller = new AbortController();
+    setMetricsHistory([]);
+    fetch(`${API_URL}/api/metrics/${encodeURIComponent(selectedRun.project_name)}`, {
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : { metrics: [] }))
+      .then((data) => setMetricsHistory(data.metrics ?? []))
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setMetricsHistory([]);
+      });
+    return () => controller.abort();
+  }, [selectedRun]);
+
   const downloadableFiles = selectedRun?.files?.filter((file) =>
     ["pt", "pth", "csv", "log", "json"].some((extension) =>
       file.name.endsWith(`.${extension}`),
@@ -126,7 +151,9 @@ export default function ResultsPage() {
       setDeleteError("");
     } catch (error) {
       console.error("Failed to delete run:", error);
-      setDeleteError(`Could not delete ${projectName}. Check the backend and retry.`);
+      setDeleteError(
+        error instanceof Error ? error.message : `Could not delete ${projectName}. Check the backend and retry.`,
+      );
     } finally {
       setDeletingProject(null);
     }
@@ -285,6 +312,10 @@ export default function ResultsPage() {
                   </CardContent>
                 </Card>
 
+                {metricsHistory.length > 0 && (
+                  <MetricsCharts metrics={metricsHistory} />
+                )}
+
                 <Card>
                   <CardHeader>
                     <CardTitle>Latest Metrics</CardTitle>
@@ -306,7 +337,7 @@ export default function ResultsPage() {
                                 {key}
                               </p>
                               <p className="mt-1 break-words text-sm font-medium text-foreground">
-                                {value || "-"}
+                                {formatMetricValue(key, value)}
                               </p>
                             </div>
                           ))}
