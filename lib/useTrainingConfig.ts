@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { defaultParamsFor, fallbackCatalog, getModel } from "@/lib/cvCatalog";
 
 export type ConfigValue = number | string | boolean;
 
@@ -19,12 +18,10 @@ export interface TrainingConfig {
   params: Record<string, ConfigValue>;
 }
 
-const defaultModel = getModel(fallbackCatalog, "object_detection", "yolo");
-
 export const defaultConfig: TrainingConfig = {
   taskType: "object_detection",
   modelType: "yolo",
-  modelName: defaultModel.model_name,
+  modelName: "yolo11n",
   datasetName: "",
   projectName: "cv_run",
   epochs: 50,
@@ -33,25 +30,34 @@ export const defaultConfig: TrainingConfig = {
   workers: 4,
   amp: true,
   seed: 0,
-  params: defaultParamsFor(defaultModel, fallbackCatalog.common_params),
+  params: {
+    epochs: 50,
+    batch_size: 16,
+    device: "cpu",
+    workers: 4,
+    amp: true,
+    seed: 0,
+  },
 };
 
 function normalizeConfig(config?: Partial<TrainingConfig>): TrainingConfig {
-  const batchSize = Number(config?.batchSize ?? config?.params?.batch_size);
+  const storedParams = config?.params ?? {};
+  const batchSize = Number(
+    config?.batchSize ?? storedParams.batch_size ?? defaultConfig.batchSize,
+  );
   const normalizedBatchSize =
     Number.isFinite(batchSize) && batchSize >= 1
       ? batchSize
       : defaultConfig.batchSize;
   const params: Record<string, ConfigValue> = {
     ...defaultConfig.params,
-    ...(config?.params ?? {}),
+    ...storedParams,
     batch_size: normalizedBatchSize,
   };
-  if (params.ocr_task === "e2e") params.ocr_task = "rec";
-
   return {
     ...defaultConfig,
     ...(config ?? {}),
+    modelName: config?.modelName || defaultConfig.modelName,
     batchSize: normalizedBatchSize,
     params,
   };

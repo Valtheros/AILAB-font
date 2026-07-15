@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { EmptyState } from "@/components/workspace/empty-state";
 import { PageHeader } from "@/components/workspace/page-header";
 import {
   StatusBadge,
@@ -22,10 +23,12 @@ import {
   ChevronUp,
   CircleGauge,
   Cpu,
+  Loader2,
   Play,
   Settings,
   Square,
   Terminal,
+  TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -34,7 +37,7 @@ import {
   formatMetricValue,
   type MetricRow,
 } from "@/components/workspace/metrics-charts";
-import { type CVCatalog, fallbackCatalog, getModel, getTask } from "@/lib/cvCatalog";
+import { type CVCatalog, catalogPlaceholder, getModel, getTask } from "@/lib/cvCatalog";
 import { apiBaseUrl, projectSlug } from "@/lib/api";
 import { useTrainingConfig } from "@/lib/useTrainingConfig";
 import { memorySafetyForModel } from "@/lib/resourceSafety";
@@ -72,8 +75,8 @@ export default function TrainingPage() {
   const [showLogs, setShowLogs] = useState(false);
   const [showConfigSummary, setShowConfigSummary] = useState(false);
   const [metricsHistory, setMetricsHistory] = useState<MetricRow[]>([]);
-  const [catalog, setCatalog] = useState<CVCatalog>(fallbackCatalog);
-  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [catalog, setCatalog] = useState<CVCatalog>(catalogPlaceholder);
+  const [catalogStatus, setCatalogStatus] = useState<"loading" | "ready" | "error">("loading");
   const [configHydrated, setConfigHydrated] = useState(
     useTrainingConfig.persist.hasHydrated(),
   );
@@ -121,18 +124,13 @@ export default function TrainingPage() {
     deviceOptions.length === 0 || (currentDeviceAvailable && !shouldPreferGpuDefault);
 
   useEffect(() => {
+    if (catalogStatus !== "ready") return;
     if (deviceOptions.length === 0) return;
 
     if (!currentDeviceAvailable || shouldPreferGpuDefault) {
       updateConfig("device", fallbackDevice, { deviceSelection: "auto" });
     }
-  }, [
-    currentDeviceAvailable,
-    deviceOptions.length,
-    fallbackDevice,
-    shouldPreferGpuDefault,
-    updateConfig,
-  ]);
+  }, [catalogStatus, config.device, deviceOptions, deviceSelection, deviceSpec?.default, updateConfig]);
 
   const effectiveModelName = useMemo(() => {
     if (effectiveModelType === "yolo") {
@@ -171,7 +169,7 @@ export default function TrainingPage() {
     deviceOptions.find((option) => option.value === config.device)?.label ??
     (config.device === "cpu" ? "CPU" : `GPU ${config.device}`);
 
-  const memoryReady = catalogLoaded && configHydrated && deviceReady;
+  const memoryReady = catalogStatus === "ready" && configHydrated && deviceReady;
   const memorySafety = useMemo(
     () =>
       memoryReady
@@ -389,9 +387,14 @@ Stop requested for job ${jobId}.
         if (!response.ok) throw new Error("Catalog unavailable");
         return response.json();
       })
-      .then((data: CVCatalog) => setCatalog(data))
-      .catch(() => setCatalog(fallbackCatalog))
-      .finally(() => setCatalogLoaded(true));
+      .then((data: CVCatalog) => {
+        if (!Array.isArray(data.tasks) || data.tasks.length === 0) {
+          throw new Error("Catalog has no tasks");
+        }
+        setCatalog(data);
+        setCatalogStatus("ready");
+      })
+      .catch(() => setCatalogStatus("error"));
   }, []);
 
   useEffect(() => {
@@ -449,6 +452,33 @@ Stop requested for job ${jobId}.
       setShowLogs(true);
     }
   }, [logs]);
+
+  if (catalogStatus !== "ready" && !jobId && !isTraining) {
+    const failed = catalogStatus === "error";
+    return (
+      <MainLayout>
+        <div className="space-y-6">
+          <PageHeader
+            eyebrow="Workspace"
+            title="Training Monitor"
+            description={t("training.header.description")}
+          />
+          <EmptyState
+            icon={failed ? TriangleAlert : Loader2}
+            title={failed ? "Model catalog unavailable" : "Checking model catalog"}
+            description={t(failed ? "config.catalog.unavailable" : "config.catalog.loading")}
+            actions={
+              failed ? (
+                <Button variant="outline" onClick={() => window.location.reload()}>
+                  Retry
+                </Button>
+              ) : undefined
+            }
+          />
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>

@@ -20,9 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { EmptyState } from "@/components/workspace/empty-state";
 import { PageHeader } from "@/components/workspace/page-header";
-import { PaddleOcrSetup } from "@/components/workspace/paddleocr-setup";
-import { TesseractSetup } from "@/components/workspace/tesseract-setup";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import {
   Activity,
@@ -31,7 +30,7 @@ import {
   CheckCircle,
   Cpu,
   Database,
-  FileText,
+  Loader2,
   Play,
   RotateCcw,
   Settings,
@@ -44,8 +43,8 @@ import {
   CVCatalog,
   ModelSpec,
   ParamSpec,
+  catalogPlaceholder,
   defaultParamsFor,
-  fallbackCatalog,
   getModel,
   getTask,
 } from "@/lib/cvCatalog";
@@ -76,7 +75,6 @@ interface Dataset {
   tasks: string[];
   formats: string[];
   size: string;
-  paddleocrTasks?: string[];
   sourceFormat?: string;
   datasetTask?: string;
   datasetTasks?: string[];
@@ -89,7 +87,6 @@ interface Dataset {
 const taskIcons: Record<string, ComponentType<{ className?: string }>> = {
   image_classification: Cpu,
   segmentation: Boxes,
-  ocr: FileText,
   object_detection: Activity,
 };
 
@@ -97,25 +94,14 @@ function formatLabel(value?: string) {
   return value ? value.replaceAll("_", " ") : "unknown";
 }
 
-function isPaddleOcrTaskCompatible(dataset: Dataset, params: Record<string, ConfigValue>) {
-  const requestedTask = String(params.ocr_task ?? "rec");
-  if (requestedTask === "det") return dataset.paddleocrTasks?.includes("det") ?? false;
-  return Boolean(
-    dataset.paddleocrTasks?.includes("rec") ||
-      dataset.formats?.includes("tesseract_ground_truth"),
-  );
-}
-
 function isDatasetCompatible(
   dataset: Dataset,
   model: ModelSpec,
   taskId: string,
-  params: Record<string, ConfigValue>,
 ) {
   const compatibility = dataset.compatibleModels?.find((item) => item.id === model.id);
   if (compatibility) {
     if (!compatibility.ready) return false;
-    if (model.id === "paddleocr") return isPaddleOcrTaskCompatible(dataset, params);
     return true;
   }
 
@@ -125,13 +111,8 @@ function isDatasetCompatible(
   const hasMatchingTask = dataset.tasks?.includes(taskId);
   if (!hasMatchingFormat || !hasMatchingTask) return false;
 
-  if (model.id === "paddleocr") return isPaddleOcrTaskCompatible(dataset, params);
-
   return true;
 }
-
-const paddleOcrSetupParamKeys = new Set(["config_path", "pretrained_model"]);
-const tesseractSetupParamKeys = new Set(["start_model"]);
 
 function coerceValue(spec: ParamSpec, raw: string | boolean): ConfigValue {
   if (spec.type === "boolean") {
@@ -230,10 +211,8 @@ export default function ConfigPage() {
     setTaskModel,
     resetConfig,
   } = useTrainingConfig();
-  const [catalog, setCatalog] = useState<CVCatalog>(fallbackCatalog);
-  const [catalogSource, setCatalogSource] = useState<"backend" | "fallback">(
-    "backend",
-  );
+  const [catalog, setCatalog] = useState<CVCatalog>(catalogPlaceholder);
+  const [catalogStatus, setCatalogStatus] = useState<"loading" | "ready" | "error">("loading");
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [datasetError, setDatasetError] = useState("");
 
@@ -244,11 +223,14 @@ export default function ConfigPage() {
         if (!response.ok) {
           throw new Error(`Catalog returned ${response.status}`);
         }
-        setCatalog(await response.json());
-        setCatalogSource("backend");
+        const data = (await response.json()) as CVCatalog;
+        if (!Array.isArray(data.tasks) || data.tasks.length === 0) {
+          throw new Error("Catalog has no tasks");
+        }
+        setCatalog(data);
+        setCatalogStatus("ready");
       } catch {
-        setCatalog(fallbackCatalog);
-        setCatalogSource("fallback");
+        setCatalogStatus("error");
       }
     };
 
@@ -271,7 +253,7 @@ export default function ConfigPage() {
 
     loadCatalog();
     loadDatasets();
-  }, []);
+  }, [t]);
 
   const selectedTask = getTask(catalog, config.taskType);
   const selectedModel = getModel(catalog, selectedTask.id, config.modelType);
@@ -282,6 +264,7 @@ export default function ConfigPage() {
   const deviceOptions = useMemo(() => deviceSpec?.options ?? [], [deviceSpec]);
 
   useEffect(() => {
+    if (catalogStatus !== "ready") return;
     if (config.taskType === selectedTask.id && config.modelType === selectedModel.id) {
       return;
     }
@@ -293,6 +276,7 @@ export default function ConfigPage() {
     );
   }, [
     catalog.common_params,
+    catalogStatus,
     config.modelType,
     config.taskType,
     selectedModel,
@@ -301,6 +285,7 @@ export default function ConfigPage() {
   ]);
 
   useEffect(() => {
+    if (catalogStatus !== "ready") return;
     if (deviceOptions.length === 0) return;
     const preferredDevice = String(deviceSpec?.default ?? deviceOptions[0].value);
     const currentDeviceAvailable = deviceOptions.some(
@@ -312,14 +297,14 @@ export default function ConfigPage() {
     if (!currentDeviceAvailable || shouldPreferGpuDefault) {
       updateConfig("device", preferredDevice, { deviceSelection: "auto" });
     }
-  }, [config.device, deviceOptions, deviceSelection, deviceSpec?.default, updateConfig]);
+  }, [catalogStatus, config.device, deviceOptions, deviceSelection, deviceSpec?.default, updateConfig]);
 
   const compatibleDatasets = useMemo(
     () =>
       datasets.filter((dataset) =>
-        isDatasetCompatible(dataset, selectedModel, selectedTask.id, config.params),
+        isDatasetCompatible(dataset, selectedModel, selectedTask.id),
       ),
-    [config.params, datasets, selectedModel, selectedTask.id],
+    [datasets, selectedModel, selectedTask.id],
   );
   const selectedDataset = compatibleDatasets.find(
     (dataset) => dataset.name === config.datasetName,
@@ -342,15 +327,7 @@ export default function ConfigPage() {
 
   const commonSpecs = useMemo(() => catalog.common_params, [catalog]);
   const modelSpecs = selectedModel.params;
-  const visibleModelSpecs = useMemo(() => {
-    if (selectedModel.id === "paddleocr") {
-      return modelSpecs.filter((spec) => !paddleOcrSetupParamKeys.has(spec.key));
-    }
-    if (selectedModel.id === "tesseract") {
-      return modelSpecs.filter((spec) => !tesseractSetupParamKeys.has(spec.key));
-    }
-    return modelSpecs;
-  }, [modelSpecs, selectedModel.id]);
+  const visibleModelSpecs = modelSpecs;
 
   const memorySafety = useMemo(
     () =>
@@ -379,12 +356,13 @@ export default function ConfigPage() {
   };
 
   useEffect(() => {
+    if (catalogStatus !== "ready") return;
     if (selectedDataset) return;
     const nextDatasetName = compatibleDatasets[0]?.name ?? "";
     if (config.datasetName !== nextDatasetName) {
       updateConfig("datasetName", nextDatasetName);
     }
-  }, [compatibleDatasets, config.datasetName, selectedDataset, updateConfig]);
+  }, [catalogStatus, compatibleDatasets, config.datasetName, selectedDataset, updateConfig]);
 
   const handleTaskChange = (taskId: string) => {
     const task = getTask(catalog, taskId);
@@ -431,6 +409,33 @@ export default function ConfigPage() {
     if (spec.key === "seed") updateConfig("seed", Number(value));
   };
 
+  if (catalogStatus !== "ready") {
+    const failed = catalogStatus === "error";
+    return (
+      <MainLayout>
+        <div className="space-y-6">
+          <PageHeader
+            eyebrow="Configuration"
+            title="Model Configuration"
+            description={t("config.header.description")}
+          />
+          <EmptyState
+            icon={failed ? TriangleAlert : Loader2}
+            title={failed ? "Model catalog unavailable" : "Checking model catalog"}
+            description={t(failed ? "config.catalog.unavailable" : "config.catalog.loading")}
+            actions={
+              failed ? (
+                <Button variant="outline" onClick={() => window.location.reload()}>
+                  Retry
+                </Button>
+              ) : undefined
+            }
+          />
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -465,13 +470,9 @@ export default function ConfigPage() {
         />
 
         <div className="flex flex-wrap gap-2">
-          {catalogSource === "fallback" ? (
-            <StatusBadge tone="warning">Using local model catalog</StatusBadge>
-          ) : (
-            <StatusBadge tone="success">
-              Backend catalog {catalog.version}
-            </StatusBadge>
-          )}
+          <StatusBadge tone="success">
+            Backend catalog {catalog.version}
+          </StatusBadge>
           {datasetError && <StatusBadge tone="warning">{datasetError}</StatusBadge>}
         </div>
 
@@ -592,9 +593,6 @@ export default function ConfigPage() {
                         </div>
                         <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
                           {dataset.images.toLocaleString()} images - {formatLabel(dataset.datasetTask ?? dataset.canonicalTask)} - {formatLabel(dataset.canonicalFormat)}
-                          {dataset.paddleocrTasks?.length
-                            ? ` - OCR: ${dataset.paddleocrTasks.join(", ")}`
-                            : ""}
                         </p>
                       </button>
                     );
@@ -756,20 +754,6 @@ export default function ConfigPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
-                {selectedModel.id === "paddleocr" && (
-                  <PaddleOcrSetup
-                    params={config.params}
-                    presets={selectedModel.base_model_presets}
-                    onParamChange={updateParam}
-                  />
-                )}
-                {selectedModel.id === "tesseract" && (
-                  <TesseractSetup
-                    params={config.params}
-                    presets={selectedModel.base_model_presets}
-                    onParamChange={updateParam}
-                  />
-                )}
                 <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                   {visibleModelSpecs.map((spec) => (
                     <ParamInput

@@ -68,8 +68,6 @@ interface AnnotationStats {
   coco_boxes?: number;
   coco_masks?: number;
   semantic_masks?: number;
-  paddleocr_tasks?: string[];
-  tesseract_pairs?: number;
 }
 
 interface ImportProfile {
@@ -545,7 +543,6 @@ export default function DatasetPage() {
                   {[
                     t("dataset.preview.note.inspect"),
                     t("dataset.preview.note.coco"),
-                    t("dataset.preview.note.ocr"),
                   ].map((note) => (
                     <div
                       className="flex gap-3 rounded-lg border border-border bg-background/70 p-3"

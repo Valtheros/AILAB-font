@@ -6,7 +6,6 @@ import {
   Boxes,
   Cpu,
   Database,
-  ScanText,
   Telescope,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,11 +18,6 @@ import { useLanguage } from "@/components/language-provider";
 const taskFamilies = [
   { label: "Image Classification", detail: "ResNet and EfficientNet", icon: Cpu },
   { label: "Segmentation", detail: "DeepLabV3+ and Mask R-CNN", icon: Boxes },
-  {
-    label: "OCR / Document Vision",
-    detail: "PaddleOCR and Tesseract",
-    icon: ScanText,
-  },
   {
     label: "Object Detection",
     detail: "YOLOv11 and Faster R-CNN",
