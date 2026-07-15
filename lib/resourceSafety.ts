@@ -60,7 +60,7 @@ export function memorySafetyForModel(model: ModelSpec, input: MemorySafetyInput)
   const suggestions: string[] = [];
   const summary: string[] = [];
   const cpu = isCpu(input.device);
-  const workerCap = cpu || model.id === "tesseract" ? 2 : 4;
+  const workerCap = cpu ? 2 : 4;
 
   if (input.workers > workerCap) {
     issues.push("Workers " + input.workers + " is high for the current RAM profile.");
@@ -116,21 +116,6 @@ export function memorySafetyForModel(model: ModelSpec, input: MemorySafetyInput)
       issues.push("DeepLabV3+ batch " + input.batchSize + " is too high for image_size " + imageSize + ".");
       suggestions.push("Use image_size 512 batch 2, or image_size 1024 batch 1.");
     }
-  }
-
-  if (model.id === "paddleocr") {
-    const task = String(input.params.ocr_task ?? "rec");
-    const batch = numeric(input.params.batch_size_per_card, 32);
-    const cap = cpu ? 8 : task === "det" ? 8 : 64;
-    summary.push("OCR " + task, "batch per card " + batch, "safe <= " + cap);
-    if (batch > cap) {
-      issues.push("PaddleOCR " + task + " batch_size_per_card " + batch + " exceeds the safe limit.");
-      suggestions.push("Use batch_size_per_card <= " + cap + ".");
-    }
-  }
-
-  if (model.id === "tesseract") {
-    summary.push("CPU/RAM guarded", "workers <= " + workerCap);
   }
 
   if (summary.length === 0) summary.push("Conservative defaults");

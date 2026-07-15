@@ -14,7 +14,6 @@ import {
   Folder,
   Image as ImageIcon,
   Layers3,
-  ScanText,
   Settings2,
   SlidersHorizontal,
   Upload,
@@ -41,7 +40,7 @@ import { I18nText } from "@/components/i18n-text";
 
 type TreeKind = "folder" | "image" | "file";
 
-type GuideTab = "workflow" | "models" | "datasets" | "ocr";
+type GuideTab = "workflow" | "models" | "datasets";
 
 interface TreeRow {
   label: string;
@@ -68,7 +67,7 @@ interface ModelGuide {
 
 function guideTabFromSearch(value: string | string[] | undefined): GuideTab {
   const tab = Array.isArray(value) ? value[0] : value;
-  return tab === "workflow" || tab === "datasets" || tab === "ocr" || tab === "models"
+  return tab === "workflow" || tab === "datasets" || tab === "models"
     ? tab
     : "workflow";
 }
@@ -76,7 +75,7 @@ function guideTabFromSearch(value: string | string[] | undefined): GuideTab {
 const workflowStages = [
   {
     title: "Choose the task",
-    description: "Decide what the answer should look like: one class, boxes, masks, or text.",
+    description: "Decide what the answer should look like: one class, boxes, or masks.",
     icon: BookOpenCheck,
   },
   {
@@ -121,16 +120,6 @@ const decisionRows = [
     need: "Separate object masks per instance",
     model: "Mask R-CNN",
     dataset: "COCO instance masks",
-  },
-  {
-    need: "Read cropped words or text lines",
-    model: "PaddleOCR recognition or Tesseract",
-    dataset: "PaddleOCR rec labels or Tesseract .gt.txt",
-  },
-  {
-    need: "Find text regions in full images",
-    model: "PaddleOCR detection",
-    dataset: "PaddleOCR det labels",
   },
 ];
 
@@ -265,58 +254,6 @@ const modelGuides: ModelGuide[] = [
       "Do not use semantic masks where all objects of one class are merged together.",
     ],
   },
-  {
-    title: "PaddleOCR",
-    task: "OCR detection or recognition",
-    format: "paddleocr_labels",
-    accepted: ["PaddleOCR rec/det labels", "Tesseract .gt.txt converted to rec"],
-    icon: ScanText,
-    useWhen: "Use when training OCR with PaddleOCR recipes for text detection or text recognition.",
-    prepare: [
-      "For recognition, use cropped text images with rec_gt_train.txt.",
-      "For detection, use full images with det_gt_train.txt box or polygon labels.",
-      "Tesseract .gt.txt recognition data can be exported for PaddleOCR recognition when training starts.",
-    ],
-    importResult: [
-      "Ready models should include PaddleOCR when paddleocr_labels is present.",
-      "Preview shows OCR tasks such as rec or det.",
-    ],
-    configure: [
-      "Choose Recognition or Detection in the PaddleOCR base model selector.",
-      "Use the preset config before trying custom paths.",
-      "Use Previous run only when fine-tuning from an AILAB OCR checkpoint.",
-    ],
-    avoid: [
-      "Do not choose recognition for full-page images unless text is already cropped.",
-      "Do not choose detection when your labels only contain transcript text.",
-    ],
-  },
-  {
-    title: "Tesseract",
-    task: "OCR language/font adaptation",
-    format: "tesseract_ground_truth",
-    accepted: ["Tesseract .gt.txt", "PaddleOCR rec converted to .gt.txt"],
-    icon: FileText,
-    useWhen: "Use when adapting Tesseract to a language, font, scanner style, or document source.",
-    prepare: [
-      "Pair each image with a matching .gt.txt file using the same base name.",
-      "Keep each image focused on a line or word when possible.",
-      "PaddleOCR recognition labels can be exported into .gt.txt pairs when Tesseract training starts.",
-    ],
-    importResult: [
-      "Ready models should include Tesseract when .gt.txt pairs exist.",
-      "The OCR worker currently has eng and tha start models installed.",
-    ],
-    configure: [
-      "Choose the start model such as English or Thai.",
-      "Set a short output model code such as invoice_th.",
-      "Increase max iterations for harder fonts or low-quality scans.",
-    ],
-    avoid: [
-      "Do not use Tesseract for text detection boxes.",
-      "Do not use full document pages when the ground truth is line-level text.",
-    ],
-  },
 ];
 
 const datasetLayouts = [
@@ -372,28 +309,6 @@ const datasetLayouts = [
       { label: "val", kind: "folder", depth: 1 },
       { label: "images/image_101.jpg", kind: "image", depth: 2 },
       { label: "masks/image_101.png", kind: "image", depth: 2 },
-    ] satisfies TreeRow[],
-  },
-  {
-    title: "PaddleOCR recognition/detection",
-    format: "paddleocr_labels",
-    rows: [
-      { label: "dataset.zip", kind: "folder", depth: 0 },
-      { label: "image_001.jpg", kind: "image", depth: 1 },
-      { label: "rec_gt_train.txt", kind: "file", depth: 1 },
-      { label: "rec_gt_val.txt", kind: "file", depth: 1 },
-      { label: "det_gt_train.txt", kind: "file", depth: 1 },
-    ] satisfies TreeRow[],
-  },
-  {
-    title: "Tesseract ground truth",
-    format: "tesseract_ground_truth",
-    rows: [
-      { label: "dataset.zip", kind: "folder", depth: 0 },
-      { label: "line_001.tif", kind: "image", depth: 1 },
-      { label: "line_001.gt.txt", kind: "file", depth: 1 },
-      { label: "line_002.tif", kind: "image", depth: 1 },
-      { label: "line_002.gt.txt", kind: "file", depth: 1 },
     ] satisfies TreeRow[],
   },
 ];
@@ -592,7 +507,6 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
             <TabsTrigger value="workflow">Workflow</TabsTrigger>
             <TabsTrigger value="models">Model Guide</TabsTrigger>
             <TabsTrigger value="datasets">Dataset Layouts</TabsTrigger>
-            <TabsTrigger value="ocr">OCR Details</TabsTrigger>
           </TabsList>
 
           <TabsContent value="workflow" className="space-y-4">
@@ -653,96 +567,6 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
             </div>
           </TabsContent>
 
-          <TabsContent value="ocr" className="space-y-4">
-            <section className="grid gap-4 xl:grid-cols-[.9fr_1.1fr]">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <ScanText className="h-5 w-5" />
-                    PaddleOCR
-                  </CardTitle>
-                  <CardDescription>
-                    <I18nText textKey="guide.paddle.description" />
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="rounded-lg border border-border bg-background/70 p-4">
-                    <StatusBadge tone="success">Recognition</StatusBadge>
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                      <I18nText textKey="Use `rec_gt_train.txt` when each image is already cropped to one word or one text line." />
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-border bg-background/70 p-4">
-                    <StatusBadge tone="warning">Detection</StatusBadge>
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                      <I18nText textKey="Use `det_gt_train.txt` when the model must learn where text appears in full images." />
-                    </p>
-                  </div>
-                  <Checklist
-                    items={[
-                      "Use preset configs first; custom paths are for advanced/admin use.",
-                      "Choose Previous run only when reusing an AILAB OCR checkpoint.",
-                      "Tesseract .gt.txt recognition data can be imported for PaddleOCR recognition.",
-                    ]}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5" />
-                    Tesseract
-                  </CardTitle>
-                  <CardDescription>
-                    <I18nText textKey="guide.tesseract.description" />
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {[
-                      {
-                        title: "Start model",
-                        body: "Choose English or Thai from the Tesseract start-model selector.",
-                      },
-                      {
-                        title: "Ground truth",
-                        body: "Each image must have a same-name .gt.txt transcript file.",
-                      },
-                      {
-                        title: "Output code",
-                        body: "Use a short model code, for example invoice_th or shop_sign_en.",
-                      },
-                      {
-                        title: "Iterations",
-                        body: "Increase max iterations when fonts, scans, or language are harder.",
-                      },
-                    ].map((item) => (
-                      <div
-                        key={item.title}
-                        className="rounded-lg border border-border bg-background/70 p-4"
-                      >
-                        <p className="text-sm font-semibold">{item.title}</p>
-                        <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                          <I18nText textKey={item.body} />
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="rounded-lg border border-dashed border-border bg-background/70 p-4">
-                    <div className="flex items-center gap-2">
-                      <FileArchive className="h-4 w-4 text-muted-foreground" />
-                      <p className="text-sm font-medium">Installed start models</p>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge>eng</Badge>
-                      <Badge>tha</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </section>
-          </TabsContent>
         </Tabs>
       </div>
     </MainLayout>

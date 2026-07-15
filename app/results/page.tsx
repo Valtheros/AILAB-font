@@ -99,7 +99,7 @@ export default function ResultsPage() {
   );
 
   const downloadableFiles = selectedRun?.files?.filter((file) =>
-    ["pt", "pth", "csv", "log", "json", "traineddata"].some((extension) =>
+    ["pt", "pth", "csv", "log", "json"].some((extension) =>
       file.name.endsWith(`.${extension}`),
     ),
   );

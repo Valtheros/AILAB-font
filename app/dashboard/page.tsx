@@ -11,7 +11,6 @@ import {
   FileSliders,
   Layers3,
   Play,
-  ScanText,
 } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
 import {
@@ -84,7 +83,6 @@ const workflowStages = [
 const taskFamilies = [
   { label: "Classification", icon: Boxes },
   { label: "Segmentation", icon: Layers3 },
-  { label: "OCR", icon: ScanText },
   { label: "Detection", icon: Activity },
 ];
 
