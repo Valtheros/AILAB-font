@@ -30,14 +30,10 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  MetricsCharts,
+  formatMetricValue,
+  type MetricRow,
+} from "@/components/workspace/metrics-charts";
 import { type CVCatalog, fallbackCatalog, getModel, getTask } from "@/lib/cvCatalog";
 import { apiBaseUrl, projectSlug } from "@/lib/api";
 import { useTrainingConfig } from "@/lib/useTrainingConfig";
@@ -48,32 +44,12 @@ const API_URL = apiBaseUrl();
 const ACTIVE_JOB_KEY = "ailab-active-job";
 const TERMINAL_STATUSES = new Set(["exited", "failed", "stopped", "not_found"]);
 
-type MetricRow = Record<string, string | number>;
-
-const metricStrokes = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
-
 function numericValue(row: MetricRow | undefined, key: string) {
   if (!row) return undefined;
   const value = row[key];
   if (value === "" || value === undefined || value === null) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function displayMetric(value: string | number | undefined) {
-  if (value === undefined || value === "") return "-";
-  const parsed = Number(value);
-  if (Number.isFinite(parsed)) {
-    if (Math.abs(parsed) <= 1 && parsed !== 0) return parsed.toFixed(4);
-    return parsed.toFixed(3);
-  }
-  return String(value);
 }
 
 function statusTone(value: string): StatusTone {
@@ -97,6 +73,10 @@ export default function TrainingPage() {
   const [showConfigSummary, setShowConfigSummary] = useState(false);
   const [metricsHistory, setMetricsHistory] = useState<MetricRow[]>([]);
   const [catalog, setCatalog] = useState<CVCatalog>(fallbackCatalog);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [configHydrated, setConfigHydrated] = useState(
+    useTrainingConfig.persist.hasHydrated(),
+  );
   const [streamError, setStreamError] = useState("");
   const [runError, setRunError] = useState("");
   const [isStopping, setIsStopping] = useState(false);
@@ -106,6 +86,14 @@ export default function TrainingPage() {
     const mode = new URLSearchParams(window.location.search).get("mode");
     setIsReviewMode(mode === "review");
     setDidReadUrlMode(true);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = useTrainingConfig.persist.onFinishHydration(() =>
+      setConfigHydrated(true),
+    );
+    setConfigHydrated(useTrainingConfig.persist.hasHydrated());
+    return unsubscribe;
   }, []);
 
   const selectedTask = getTask(catalog, config.taskType);
@@ -121,20 +109,30 @@ export default function TrainingPage() {
     [catalog.common_params],
   );
   const deviceOptions = useMemo(() => deviceSpec?.options ?? [], [deviceSpec]);
+  const fallbackDevice = String(
+    deviceSpec?.default ?? deviceOptions[0]?.value ?? "cpu",
+  );
+  const currentDeviceAvailable = deviceOptions.some(
+    (option) => option.value === config.device,
+  );
+  const shouldPreferGpuDefault =
+    deviceSelection === "auto" && fallbackDevice !== "cpu" && config.device === "cpu";
+  const deviceReady =
+    deviceOptions.length === 0 || (currentDeviceAvailable && !shouldPreferGpuDefault);
 
   useEffect(() => {
     if (deviceOptions.length === 0) return;
-    const fallbackDevice = String(deviceSpec?.default ?? deviceOptions[0].value);
-    const currentDeviceAvailable = deviceOptions.some(
-      (option) => option.value === config.device,
-    );
-    const shouldPreferGpuDefault =
-      deviceSelection === "auto" && fallbackDevice !== "cpu" && config.device === "cpu";
 
     if (!currentDeviceAvailable || shouldPreferGpuDefault) {
       updateConfig("device", fallbackDevice, { deviceSelection: "auto" });
     }
-  }, [config.device, deviceOptions, deviceSelection, deviceSpec?.default, updateConfig]);
+  }, [
+    currentDeviceAvailable,
+    deviceOptions.length,
+    fallbackDevice,
+    shouldPreferGpuDefault,
+    updateConfig,
+  ]);
 
   const effectiveModelName = useMemo(() => {
     if (effectiveModelType === "yolo") {
@@ -169,44 +167,31 @@ export default function TrainingPage() {
     );
   }, [latestMetrics]);
 
-  const lossChartKeys = metricKeys.filter((key) =>
-    key.toLowerCase().includes("loss"),
-  );
-  const scoreChartKeys = metricKeys.filter((key) => {
-    const normalized = key.toLowerCase();
-    return ["accuracy", "map", "precision", "recall"].some((metric) =>
-      normalized.includes(metric),
-    );
-  });
-  const chartGroups = [
-    {
-      title: "Quality Metrics",
-      description: t("training.chart.qualityDescription"),
-      keys: scoreChartKeys,
-      domain: [0, 1] as [number, number],
-    },
-    {
-      title: "Loss",
-      description: t("training.chart.lossDescription"),
-      keys: lossChartKeys,
-      domain: undefined,
-    },
-  ].filter((group) => group.keys.length > 0);
-
   const selectedDeviceLabel =
     deviceOptions.find((option) => option.value === config.device)?.label ??
     (config.device === "cpu" ? "CPU" : `GPU ${config.device}`);
 
+  const memoryReady = catalogLoaded && configHydrated && deviceReady;
   const memorySafety = useMemo(
     () =>
-      memorySafetyForModel(selectedModel, {
-        batchSize: config.batchSize,
-        workers: config.workers,
-        device: config.device,
-        amp: config.amp,
-        params: config.params,
-      }),
-    [config.amp, config.batchSize, config.device, config.params, config.workers, selectedModel],
+      memoryReady
+        ? memorySafetyForModel(selectedModel, {
+            batchSize: config.batchSize,
+            workers: config.workers,
+            device: config.device,
+            amp: config.amp,
+            params: config.params,
+          })
+        : null,
+    [
+      config.amp,
+      config.batchSize,
+      config.device,
+      config.params,
+      config.workers,
+      memoryReady,
+      selectedModel,
+    ],
   );
 
   const summaryItems = [
@@ -218,7 +203,7 @@ export default function TrainingPage() {
     { label: "Device", value: selectedDeviceLabel },
     { label: "Workers", value: config.workers },
     { label: "AMP", value: config.amp ? "On" : "Off" },
-    { label: "Memory", value: memorySafety.label },
+    { label: "Memory", value: memorySafety?.label ?? "Checking memory..." },
   ];
 
   const detailItems = Object.entries(config.params).map(([key, value]) => ({
@@ -242,8 +227,13 @@ export default function TrainingPage() {
     setMetricsHistory([]);
     setProjectName(generatedProjectName);
 
+    const allowedParamKeys = new Set(
+      [...catalog.common_params, ...selectedModel.params].map((param) => param.key),
+    );
     const params = {
-      ...config.params,
+      ...Object.fromEntries(
+        Object.entries(config.params).filter(([key]) => allowedParamKeys.has(key)),
+      ),
       epochs: config.epochs,
       batch_size: config.batchSize,
       device: config.device,
@@ -284,11 +274,13 @@ export default function TrainingPage() {
       );
       setLogs((previous) => `${previous}Job queued: ${nextJobId}\n`);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       setIsTraining(false);
       setStatus("failed");
+      setRunError(message);
       setLogs(
         (previous) =>
-          `${previous}Error: ${error instanceof Error ? error.message : String(error)}\n`,
+          `${previous}Error: ${message}\n`,
       );
     }
   };
@@ -398,7 +390,8 @@ Stop requested for job ${jobId}.
         return response.json();
       })
       .then((data: CVCatalog) => setCatalog(data))
-      .catch(() => setCatalog(fallbackCatalog));
+      .catch(() => setCatalog(fallbackCatalog))
+      .finally(() => setCatalogLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -477,8 +470,8 @@ Stop requested for job ${jobId}.
         />
 
         {runError && (
-          <div className="flex">
-            <StatusBadge tone="danger">Stop failed: {runError}</StatusBadge>
+          <div className="rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300">
+            {runError}
           </div>
         )}
 
@@ -547,7 +540,7 @@ Stop requested for job ${jobId}.
                   </StatusBadge>
                 </div>
               )}
-              {!memorySafety.ok && (
+              {memorySafety && !memorySafety.ok && (
                 <div className="rounded-lg border border-amber-300/40 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
                   <p className="font-medium">Memory safety needs adjustment</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 leading-6">
@@ -557,7 +550,7 @@ Stop requested for job ${jobId}.
                   </ul>
                 </div>
               )}
-              <Button onClick={startTraining} disabled={!hasSelectedDataset || !memorySafety.ok}>
+              <Button onClick={startTraining} disabled={!hasSelectedDataset || !memorySafety?.ok}>
                 <Play className="h-4 w-4" />
                 Start Training
               </Button>
@@ -652,7 +645,7 @@ Stop requested for job ${jobId}.
                         {key}
                       </p>
                       <p className="mt-2 break-words text-xl font-semibold text-foreground">
-                        {displayMetric(latestMetrics?.[key])}
+                        {formatMetricValue(key, latestMetrics?.[key])}
                       </p>
                     </div>
                   ))}
@@ -660,59 +653,7 @@ Stop requested for job ${jobId}.
               </Card>
             </div>
 
-            {metricsHistory.length > 0 && chartGroups.map((group) => (
-              <Card key={group.title}>
-                <CardHeader>
-                  <CardTitle>{group.title}</CardTitle>
-                  <CardDescription>{group.description}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[260px] w-full sm:h-[320px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={metricsHistory}
-                        margin={{ top: 5, right: 24, left: 0, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis dataKey="epoch" />
-                        <YAxis domain={group.domain} />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "var(--popover)",
-                            borderColor: "var(--border)",
-                            color: "var(--popover-foreground)",
-                          }}
-                          itemStyle={{ color: "var(--popover-foreground)" }}
-                          labelStyle={{ color: "var(--popover-foreground)" }}
-                        />
-                        {group.keys.slice(0, 6).map((key, index) => (
-                          <Line
-                            key={key}
-                            type="monotone"
-                            dataKey={key}
-                            name={key}
-                            stroke={metricStrokes[index % metricStrokes.length]}
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                        ))}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
-                    {group.keys.slice(0, 6).map((key, index) => (
-                      <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground" key={key}>
-                        <span
-                          className="h-0.5 w-4 shrink-0"
-                          style={{ backgroundColor: metricStrokes[index % metricStrokes.length] }}
-                        />
-                        <span className="break-all">{key}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {metricsHistory.length > 0 && <MetricsCharts metrics={metricsHistory} />}
           </>
         )}
 

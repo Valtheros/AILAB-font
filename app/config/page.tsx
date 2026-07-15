@@ -475,8 +475,8 @@ export default function ConfigPage() {
           {datasetError && <StatusBadge tone="warning">{datasetError}</StatusBadge>}
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
-          <aside className="space-y-4">
+        <div className="grid min-w-0 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="min-w-0 space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -579,9 +579,9 @@ export default function ConfigPage() {
                             : "border-border bg-background/70 hover:bg-accent/60"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="break-words font-medium">{dataset.name}</span>
-                          <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                          <span className="min-w-0 break-all font-medium sm:break-words">{dataset.name}</span>
+                          <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
                             {selected && (
                               <StatusBadge tone="success">Selected</StatusBadge>
                             )}
@@ -590,7 +590,7 @@ export default function ConfigPage() {
                             </span>
                           </div>
                         </div>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
                           {dataset.images.toLocaleString()} images - {formatLabel(dataset.datasetTask ?? dataset.canonicalTask)} - {formatLabel(dataset.canonicalFormat)}
                           {dataset.paddleocrTasks?.length
                             ? ` - OCR: ${dataset.paddleocrTasks.join(", ")}`
@@ -612,7 +612,7 @@ export default function ConfigPage() {
             </Card>
           </aside>
 
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
