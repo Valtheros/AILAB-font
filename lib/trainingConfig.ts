@@ -72,11 +72,16 @@ export function taskConfig(task: TrainingTask): TrainingConfig {
 }
 
 export function taskDraftPayload(config: TrainingConfig) {
+  const modelName = config.modelType === "yolo"
+    ? `yolo11${String(config.params.model_size ?? "n").replace(/^yolo11/, "").replace(/\.pt$/, "")}`
+    : config.modelType === "resnet" || config.modelType === "efficientnet"
+      ? String(config.params.architecture ?? config.modelName)
+    : config.modelName;
   return {
     display_name: config.projectName.trim() || "cv_run",
     task_type: config.taskType,
     model_type: config.modelType,
-    model_name: config.modelName,
+    model_name: modelName,
     dataset_name: config.datasetName,
     epochs: config.epochs,
     batch_size: config.batchSize,
