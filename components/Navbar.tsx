@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Cpu } from "lucide-react";
+import { BookOpenCheck, Cpu } from "lucide-react";
 import { SessionMenu } from "@/components/auth/session-menu";
-import { BackendStatusBadge } from "@/components/workspace/backend-status-badge";
+import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useLanguage } from "@/components/language-provider";
@@ -34,9 +34,13 @@ export function Navbar({ mobileMenuButton }: NavbarProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="hidden sm:block">
-            <BackendStatusBadge />
-          </div>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/guide" title="Guide">
+              <BookOpenCheck className="h-4 w-4" />
+              <span className="hidden sm:inline">Guide</span>
+              <span className="sr-only sm:hidden">Guide</span>
+            </Link>
+          </Button>
           <SessionMenu />
           <LanguageToggle />
           <ThemeToggle />

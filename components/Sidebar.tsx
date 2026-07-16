@@ -4,11 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  BookOpenCheck,
   Database,
-  Settings,
-  Play,
-  Download,
+  ListTodo,
   Menu,
   UserRound,
   ShieldCheck,
@@ -26,29 +23,14 @@ const navItems = [
     icon: LayoutDashboard,
   },
   {
-    title: "Guide",
-    href: "/guide",
-    icon: BookOpenCheck,
-  },
-  {
     title: "Dataset",
     href: "/dataset",
     icon: Database,
   },
   {
-    title: "Configuration",
-    href: "/config",
-    icon: Settings,
-  },
-  {
-    title: "Training",
-    href: "/training",
-    icon: Play,
-  },
-  {
-    title: "Results",
-    href: "/results",
-    icon: Download,
+    title: "Tasks",
+    href: "/tasks",
+    icon: ListTodo,
   },
   {
     title: "Account",
@@ -109,7 +91,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
           <nav className="flex-1 space-y-1 p-3">
             {visibleNavItems.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
                   key={item.href}

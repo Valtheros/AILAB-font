@@ -70,7 +70,7 @@ async function getUserDeleteImpact(userId: string) {
         ) as datasets,
         (
           select count(*)::int
-          from training_runs tr
+          from training_tasks tr
           where tr.owner_user_id = u.id
         ) as "trainingRuns"
       from "user" u

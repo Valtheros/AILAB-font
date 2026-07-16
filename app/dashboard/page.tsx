@@ -6,9 +6,7 @@ import {
   Activity,
   ArrowRight,
   Database,
-  Download,
-  FileSliders,
-  Play,
+  ListTodo,
 } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
 import {
@@ -33,22 +31,10 @@ const quickActions = [
     icon: Database,
   },
   {
-    title: "Configure run",
+    title: "Open tasks",
     descriptionKey: "dashboard.action.config.description",
-    href: "/config",
-    icon: FileSliders,
-  },
-  {
-    title: "Open monitor",
-    descriptionKey: "dashboard.action.monitor.description",
-    href: "/training",
-    icon: Play,
-  },
-  {
-    title: "Browse results",
-    descriptionKey: "dashboard.action.results.description",
-    href: "/results",
-    icon: Download,
+    href: "/tasks",
+    icon: ListTodo,
   },
 ];
 
@@ -63,9 +49,9 @@ interface Dataset {
 
 interface TrainingRun {
   id: string;
-  project_name: string;
-  model_name?: string;
-  dataset_name?: string;
+  displayName: string;
+  modelName?: string;
+  datasetName?: string;
   status?: string;
   updatedAt: number | string;
 }
@@ -102,12 +88,12 @@ export default function DashboardPage() {
       )
       .catch(() => setDatasetError(true));
 
-    fetch(`${API_URL}/api/runs`)
+    fetch(`${API_URL}/api/tasks`)
       .then((response) => {
         if (!response.ok) throw new Error();
         return response.json();
       })
-      .then((data: { runs?: TrainingRun[] }) => setRuns(data.runs ?? []))
+      .then((data: { tasks?: TrainingRun[] }) => setRuns(data.tasks ?? []))
       .catch(() => setRunError(true));
   }, []);
 
@@ -160,7 +146,7 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5" />
-                Recent Training Runs
+                Recent Tasks
               </CardTitle>
               <CardDescription>{t("dashboard.recent.runs.description")}</CardDescription>
             </CardHeader>
@@ -175,20 +161,20 @@ export default function DashboardPage() {
                 runs.slice(0, 3).map((run) => {
                   const status = run.status || "unknown";
                   return (
-                    <div className="rounded-md border border-border bg-background/70 p-3" key={run.id || run.project_name}>
+                    <Link href={`/tasks/${run.id}`} className="block rounded-md border border-border bg-background/70 p-3 hover:bg-accent" key={run.id}>
                       <div className="flex items-start justify-between gap-3">
-                        <p className="break-words text-sm font-medium">{run.project_name}</p>
+                        <p className="break-words text-sm font-medium">{run.displayName}</p>
                         <StatusBadge tone={statusTone(status)}>{status}</StatusBadge>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {run.model_name || t("dashboard.recent.unknownModel")} · {run.dataset_name || t("dashboard.recent.noDataset")} · {formatDate(run.updatedAt, language === "th" ? "th-TH" : "en-US")}
+                        {run.modelName || t("dashboard.recent.unknownModel")} · {run.datasetName || t("dashboard.recent.noDataset")} · {formatDate(run.updatedAt, language === "th" ? "th-TH" : "en-US")}
                       </p>
-                    </div>
+                    </Link>
                   );
                 })
               )}
-              <Link className="inline-flex items-center gap-2 text-sm font-medium hover:underline" href="/results">
-                View all runs <ArrowRight className="h-4 w-4" />
+              <Link className="inline-flex items-center gap-2 text-sm font-medium hover:underline" href="/tasks">
+                View all tasks <ArrowRight className="h-4 w-4" />
               </Link>
             </CardContent>
           </Card>
@@ -199,7 +185,7 @@ export default function DashboardPage() {
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>{t("dashboard.quick.description")}</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <CardContent className="grid gap-3 sm:grid-cols-2">
             {quickActions.map(({ descriptionKey, href, icon: Icon, title }) => (
               <Link
                 className="group rounded-lg border border-border bg-background/70 p-4 transition-colors hover:bg-accent"
