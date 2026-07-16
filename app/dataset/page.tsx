@@ -16,6 +16,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -32,6 +33,8 @@ import {
   FolderOpen,
   Image as ImageIcon,
   RefreshCw,
+  RotateCcw,
+  Settings2,
   Trash2,
   Upload,
   X,
@@ -109,8 +112,16 @@ interface Dataset {
   annotationStats?: AnnotationStats;
   conversionWarnings?: string[];
   readyModels?: CompatibleModel[];
+  compatibleModels?: CompatibleModel[];
   exportCache?: ExportCacheEntry[];
 }
+
+interface DatasetTagPreference {
+  tasks: string[];
+  models: string[];
+}
+
+const DATASET_TAGS_STORAGE_KEY = "ailab.dataset-display-tags.v1";
 
 function datasetClassNames(dataset: Dataset) {
   return dataset.classes.filter((className) => !/^\d+$/.test(className.trim()));
@@ -120,6 +131,31 @@ const API_URL = apiBaseUrl();
 
 function formatLabel(value?: string) {
   return value ? value.replaceAll("_", " ") : "unknown";
+}
+
+function taskTagOptions(dataset: Dataset) {
+  const options = [
+    ...defaultDatasetTags(dataset).tasks,
+    ...(dataset.compatibleModels ?? []).map((model) => model.dataset_task ?? model.task),
+  ];
+  return [...new Set(options)].map((id) => ({ id, label: formatLabel(id) }));
+}
+
+function modelTagOptions(dataset: Dataset) {
+  return [...new Map((dataset.compatibleModels ?? dataset.readyModels ?? []).map((model) => [model.id, { id: model.id, label: model.label }])).values()];
+}
+
+function defaultDatasetTags(dataset: Dataset): DatasetTagPreference {
+  const task = dataset.datasetTask ?? dataset.canonicalTask;
+  return {
+    tasks: task ? [task] : [],
+    models: (dataset.readyModels ?? []).map((model) => model.id),
+  };
+}
+
+function displayModelTags(dataset: Dataset, preference?: DatasetTagPreference) {
+  const labels = new Map(modelTagOptions(dataset).map((model) => [model.id, model.label]));
+  return (preference ?? defaultDatasetTags(dataset)).models.map((id) => ({ id, label: labels.get(id) ?? id }));
 }
 
 function normalizeUploadMessage(message: string) {
@@ -159,7 +195,39 @@ export default function DatasetPage() {
   const [deleteError, setDeleteError] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [classDialog, setClassDialog] = useState<{ name: string; classes: string[] } | null>(null);
+  const [tagDialog, setTagDialog] = useState<Dataset | null>(null);
+  const [tagPreferences, setTagPreferences] = useState<Record<string, DatasetTagPreference>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(DATASET_TAGS_STORAGE_KEY) ?? "{}");
+      if (stored && typeof stored === "object") setTagPreferences(stored);
+    } catch {
+      localStorage.removeItem(DATASET_TAGS_STORAGE_KEY);
+    }
+  }, []);
+
+  const saveTagPreferences = (next: Record<string, DatasetTagPreference>) => {
+    setTagPreferences(next);
+    localStorage.setItem(DATASET_TAGS_STORAGE_KEY, JSON.stringify(next));
+  };
+
+  const toggleDisplayTag = (kind: keyof DatasetTagPreference, value: string) => {
+    if (!tagDialog) return;
+    const current = tagPreferences[tagDialog.id] ?? defaultDatasetTags(tagDialog);
+    const values = current[kind].includes(value)
+      ? current[kind].filter((item) => item !== value)
+      : [...current[kind], value];
+    saveTagPreferences({ ...tagPreferences, [tagDialog.id]: { ...current, [kind]: values } });
+  };
+
+  const resetDisplayTags = () => {
+    if (!tagDialog) return;
+    const next = { ...tagPreferences };
+    delete next[tagDialog.id];
+    saveTagPreferences(next);
+  };
 
   const fetchDatasets = useCallback(async () => {
     setIsLoading(true);
@@ -613,18 +681,45 @@ export default function DatasetPage() {
                           <span>{dataset.size}</span>
                           <span>{dataset.createdAt}</span>
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <StatusBadge tone="success">{formatLabel(dataset.datasetTask ?? dataset.canonicalTask)}</StatusBadge>
+                        <div className="mt-3 flex items-center gap-2">
+                          <p className="text-xs font-medium uppercase text-muted-foreground">Display tags</p>
+                          <Button className="h-7 px-2 text-xs" variant="ghost" size="sm" onClick={() => setTagDialog(dataset)}>
+                            <Settings2 className="h-3.5 w-3.5" />Customize
+                          </Button>
                         </div>
-                        {(dataset.readyModels?.length ?? 0) > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {dataset.readyModels?.slice(0, 6).map((model) => (
-                              <Badge key={`${dataset.id}-${model.task}-${model.id}`}>
-                                {model.label}
-                              </Badge>
-                            ))}
+                        <div className="mt-3 grid gap-4 md:grid-cols-3">
+                          <div>
+                            <p className="text-xs font-medium uppercase text-muted-foreground">Task</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {(tagPreferences[dataset.id]?.tasks ?? defaultDatasetTags(dataset).tasks).map((task) => (
+                                <StatusBadge key={task} tone="success">{formatLabel(task)}</StatusBadge>
+                              ))}
+                              {(tagPreferences[dataset.id]?.tasks ?? defaultDatasetTags(dataset).tasks).length === 0 && <span className="text-xs text-muted-foreground">No task tags</span>}
+                            </div>
                           </div>
-                        )}
+                          <div>
+                            <p className="text-xs font-medium uppercase text-muted-foreground">Models</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {displayModelTags(dataset, tagPreferences[dataset.id]).map((model) => (
+                                <Badge key={`${dataset.id}-${model.id}`}>{model.label}</Badge>
+                              ))}
+                              {displayModelTags(dataset, tagPreferences[dataset.id]).length === 0 && <span className="text-xs text-muted-foreground">No model tags</span>}
+                            </div>
+                          </div>
+                          {dataset.classes?.length > 0 && (
+                            <div>
+                              <p className="text-xs font-medium text-muted-foreground">Classes ({datasetClassNames(dataset).length})</p>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {datasetClassNames(dataset).slice(0, 10).map((className) => <Badge key={className}>{className}</Badge>)}
+                                {datasetClassNames(dataset).length > 10 && (
+                                  <Button className="h-auto px-1 py-0.5 text-xs" onClick={() => setClassDialog({ name: dataset.name, classes: datasetClassNames(dataset) })} size="sm" type="button" variant="ghost">
+                                    +{datasetClassNames(dataset).length - 10} more
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                         {(dataset.conversionWarnings?.length ?? 0) > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {dataset.conversionWarnings?.slice(0, 2).map((warning) => (
@@ -632,34 +727,6 @@ export default function DatasetPage() {
                                 {warning}
                               </StatusBadge>
                             ))}
-                          </div>
-                        )}
-                        {dataset.classes?.length > 0 && (
-                          <div className="mt-3">
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Classes ({datasetClassNames(dataset).length})
-                            </p>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {datasetClassNames(dataset)
-                                .slice(0, 10)
-                                .map((className) => (
-                                  <Badge key={className}>{className}</Badge>
-                                ))}
-                              {datasetClassNames(dataset).length > 10 && (
-                                <Button
-                                  className="h-auto px-1 py-0.5 text-xs"
-                                  onClick={() => setClassDialog({
-                                    name: dataset.name,
-                                    classes: datasetClassNames(dataset),
-                                  })}
-                                  size="sm"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  +{datasetClassNames(dataset).length - 10} more
-                                </Button>
-                              )}
-                            </div>
                           </div>
                         )}
                       </div>
@@ -700,6 +767,42 @@ export default function DatasetPage() {
             )}
           </CardContent>
         </Card>
+        <Dialog open={tagDialog !== null} onOpenChange={(open) => !open && setTagDialog(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Customize display tags</DialogTitle>
+              <DialogDescription>
+                These tags only change how {tagDialog?.name} appears in this browser. Training compatibility is unchanged.
+              </DialogDescription>
+            </DialogHeader>
+            {tagDialog && (
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Task tags</p>
+                  <div className="flex flex-wrap gap-2">
+                    {taskTagOptions(tagDialog).map((option) => {
+                      const selected = (tagPreferences[tagDialog.id] ?? defaultDatasetTags(tagDialog)).tasks.includes(option.id);
+                      return <Button aria-pressed={selected} key={option.id} size="sm" variant={selected ? "default" : "outline"} onClick={() => toggleDisplayTag("tasks", option.id)}>{option.label}</Button>;
+                    })}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Model tags</p>
+                  <div className="flex flex-wrap gap-2">
+                    {modelTagOptions(tagDialog).map((option) => {
+                      const selected = (tagPreferences[tagDialog.id] ?? defaultDatasetTags(tagDialog)).models.includes(option.id);
+                      return <Button aria-pressed={selected} key={option.id} size="sm" variant={selected ? "default" : "outline"} onClick={() => toggleDisplayTag("models", option.id)}>{option.label}</Button>;
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={resetDisplayTags}><RotateCcw className="h-4 w-4" />Reset</Button>
+              <Button onClick={() => setTagDialog(null)}>Done</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <Dialog open={classDialog !== null} onOpenChange={(open) => !open && setClassDialog(null)}>
           <DialogContent>
             <DialogHeader>

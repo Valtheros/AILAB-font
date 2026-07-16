@@ -61,7 +61,7 @@ async function getAdminUsers({ limit, offset, search }: { limit: number; offset:
           ) as "datasetCount",
           (
             select count(*)::int
-            from training_runs tr
+            from training_tasks tr
             where tr.owner_user_id = u.id
           ) as "trainingRunCount"
         from "user" u

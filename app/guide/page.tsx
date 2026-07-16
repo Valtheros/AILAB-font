@@ -433,8 +433,8 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
                 </Link>
               </Button>
               <Button asChild>
-                <Link href="/config">
-                  Configure run
+                <Link href="/tasks">
+                  Open tasks
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>

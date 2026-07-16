@@ -1,5 +1,5 @@
 import { type ModelSpec } from "@/lib/cvCatalog";
-import { type ConfigValue } from "@/lib/useTrainingConfig";
+import { type ConfigValue } from "@/lib/trainingConfig";
 
 export interface MemorySafetyInput {
   batchSize: number;

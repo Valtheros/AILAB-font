@@ -3,10 +3,10 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  Boxes,
-  Cpu,
   Database,
-  Telescope,
+  Download,
+  SlidersHorizontal,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,14 +15,10 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useLanguage } from "@/components/language-provider";
 
-const taskFamilies = [
-  { label: "Image Classification", detail: "ResNet and EfficientNet", icon: Cpu },
-  { label: "Segmentation", detail: "DeepLabV3+ and Mask R-CNN", icon: Boxes },
-  {
-    label: "Object Detection",
-    detail: "YOLOv11 and Faster R-CNN",
-    icon: Telescope,
-  },
+const steps = [
+  { label: "1. Upload a dataset", detail: "home.step.upload", icon: Upload },
+  { label: "2. Configure training", detail: "home.step.configure", icon: SlidersHorizontal },
+  { label: "3. Train and get results", detail: "home.step.results", icon: Download },
 ];
 
 export default function HomePage() {
@@ -43,6 +39,9 @@ export default function HomePage() {
           </span>
         </Link>
         <div className="flex items-center gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link href="/login?callbackURL=/tasks">Log in</Link>
+          </Button>
           <LanguageToggle />
           <ThemeToggle />
         </div>
@@ -51,35 +50,32 @@ export default function HomePage() {
       <section className="mx-auto grid min-h-[calc(100vh-5.5rem)] max-w-7xl items-center gap-8 px-4 pb-10 md:px-8 lg:grid-cols-[1.03fr_.97fr]">
         <div>
           <Badge className="mb-5" variant="outline">
-            Dataset to artifact
+            Start here
           </Badge>
           <h1 className="max-w-3xl text-4xl font-semibold leading-none sm:text-6xl">
-            Train vision models from dataset to artifact.
+            Train computer vision models with AILAB.
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
             {t("home.hero.description")}
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
-            <Button asChild>
-              <Link href="/login?callbackURL=/config">
-                Configure run
+            <Button asChild size="lg">
+              <Link href="/login?callbackURL=/tasks">
+                Log in to AILAB
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild variant="outline">
-              <Link href="/login?callbackURL=/dataset">Browse datasets</Link>
-            </Button>
-            <Button asChild variant="ghost">
-              <Link href="/login?callbackURL=/dashboard">Open dashboard</Link>
+            <Button asChild size="lg" variant="outline">
+              <Link href="/signup?callbackURL=/tasks">Create account</Link>
             </Button>
           </div>
-          <div className="mt-8 grid gap-3 sm:grid-cols-2">
-            {taskFamilies.map(({ detail, icon: Icon, label }) => (
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            {steps.map(({ detail, icon: Icon, label }) => (
               <div className="console-surface flex min-h-24 items-start gap-3 p-4" key={label}>
                 <Icon className="mt-0.5 h-4 w-4 shrink-0" />
                 <div>
                   <p className="text-sm font-medium">{label}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{t(detail)}</p>
                 </div>
               </div>
             ))}
