@@ -163,7 +163,6 @@ export default function ResultsPage() {
     <MainLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Workspace"
           title="Results"
           description={t("results.header.description")}
           actions={

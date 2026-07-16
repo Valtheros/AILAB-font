@@ -102,7 +102,6 @@ function AccessDenied() {
     <MainLayout>
       <div className="mx-auto max-w-3xl space-y-6">
         <PageHeader
-          eyebrow="Admin"
           title="Access denied"
           description="Only system admins can manage authentication users and sessions."
         />
@@ -148,7 +147,6 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
     <MainLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Admin"
           title="User management"
           description="Manage platform users, admin roles, verification state, bans, sessions, and account access."
         />

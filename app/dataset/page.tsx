@@ -318,7 +318,6 @@ export default function DatasetPage() {
     <MainLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Data"
           title="Dataset Management"
           description={t("dataset.header.description")}
           actions={

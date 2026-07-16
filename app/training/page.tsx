@@ -459,7 +459,6 @@ Stop requested for job ${jobId}.
       <MainLayout>
         <div className="space-y-6">
           <PageHeader
-            eyebrow="Workspace"
             title="Training Monitor"
             description={t("training.header.description")}
           />
@@ -484,7 +483,6 @@ Stop requested for job ${jobId}.
     <MainLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Workspace"
           title="Training Monitor"
           description={t("training.header.description")}
           actions={

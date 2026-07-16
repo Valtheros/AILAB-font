@@ -23,7 +23,6 @@ export default async function AccountPage() {
     <MainLayout>
       <div className="mx-auto max-w-4xl space-y-6">
         <PageHeader
-          eyebrow="Account"
           title="User workspace"
           description={<I18nText textKey="account.header.description" />}
         />

@@ -116,7 +116,6 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-6">
         <div className="order-1">
           <PageHeader
-            eyebrow="Workspace"
             title="Dashboard"
             description={t("dashboard.header.description")}
           />

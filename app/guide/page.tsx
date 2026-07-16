@@ -422,7 +422,6 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
     <MainLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Guide"
           title="Training Guide"
           description={<I18nText textKey="guide.header.description" />}
           actions={

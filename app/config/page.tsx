@@ -415,7 +415,6 @@ export default function ConfigPage() {
       <MainLayout>
         <div className="space-y-6">
           <PageHeader
-            eyebrow="Configuration"
             title="Model Configuration"
             description={t("config.header.description")}
           />
@@ -440,7 +439,6 @@ export default function ConfigPage() {
     <MainLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Configuration"
           title="Model Configuration"
           description={t("config.header.description")}
           actions={
@@ -489,19 +487,6 @@ export default function ConfigPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Select value={selectedTask.id} onValueChange={handleTaskChange}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {catalog.tasks.map((task) => (
-                      <SelectItem key={task.id} value={task.id}>
-                        {task.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
                 <div className="grid gap-2">
                   {catalog.tasks.map((task) => {
                     const Icon = taskIcons[task.id] ?? Activity;
