@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, CircleGauge, Download, Loader2, Square, Terminal, Trophy } from "lucide-react";
+import { Activity, CircleGauge, Download, Loader2, Sparkles, Square, Terminal, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { MetricsCharts, formatMetricValue, type MetricRow } from "@/components/workspace/metrics-charts";
+import { ModelTestDialog } from "@/components/tasks/model-test-dialog";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
 import type { TrainingTask } from "@/lib/trainingConfig";
@@ -41,6 +42,7 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const [showLogs, setShowLogs] = useState(!TERMINAL.has(task.status));
   const [stopping, setStopping] = useState(false);
   const [streamError, setStreamError] = useState("");
+  const [testOpen, setTestOpen] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setStatus(task.status); }, [task.status]);
@@ -79,6 +81,10 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const keys = useMemo(() => latest ? Object.keys(latest).filter((key) => key !== "epoch" && number(latest, key) !== undefined) : [], [latest]);
   const active = !TERMINAL.has(status);
   const files = (task.files ?? []).filter((file) => ["pt", "pth", "csv", "log", "json"].some((extension) => file.name.endsWith(`.${extension}`)));
+  // Model testing is image-classification only for now: detection and
+  // segmentation results need box/mask rendering the dialog does not do.
+  const canTestModel =
+    status === "completed" && task.taskType === "image_classification" && Boolean(task.runSlug);
 
   const stop = async () => {
     setStopping(true);
@@ -92,7 +98,7 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     <div className="console-surface flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
       <div className="flex h-11 w-11 items-center justify-center rounded-md border"><Activity className={`h-5 w-5 ${active ? "animate-pulse" : ""}`} /></div>
       <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{task.modelName}</p><StatusBadge tone={tone(status)}>{status}</StatusBadge>{streamError && <StatusBadge tone="warning">{streamError}</StatusBadge>}</div><p className="mt-1 break-words text-sm text-muted-foreground">{task.displayName}{task.datasetName ? ` - ${task.datasetName}` : ""}</p></div>
-      <div className="flex items-center gap-4"><div><p className="text-2xl font-semibold">{Math.round(epoch)}/{task.epochs}</p><p className="text-sm text-muted-foreground">epochs</p></div>{active && <Button variant="destructive" onClick={stop} disabled={stopping}><Square className="h-4 w-4" />{stopping ? "Stopping..." : "Stop Run"}</Button>}</div>
+      <div className="flex flex-wrap items-center gap-4"><div><p className="text-2xl font-semibold">{Math.round(epoch)}/{task.epochs}</p><p className="text-sm text-muted-foreground">epochs</p></div>{canTestModel && <Button onClick={() => setTestOpen(true)}><Sparkles className="h-4 w-4" />Test Model</Button>}{active && <Button variant="destructive" onClick={stop} disabled={stopping}><Square className="h-4 w-4" />{stopping ? "Stopping..." : "Stop Run"}</Button>}</div>
     </div>
     <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
       <Card><CardHeader><div className="flex justify-between"><div><CardTitle>Progress</CardTitle><CardDescription>{progress.toFixed(1)}% complete</CardDescription></div><Badge variant="outline">Epoch {Math.round(epoch)}</Badge></div></CardHeader><CardContent><Progress value={progress} className="h-3" /></CardContent></Card>
@@ -102,5 +108,13 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     {TERMINAL.has(status) && files.length > 0 && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Trophy className="h-5 w-5" />Artifacts</CardTitle><CardDescription>{t("tasks.artifacts.description")}</CardDescription></CardHeader><CardContent className="grid gap-2 md:grid-cols-2">{files.map((file) => <a key={file.path} href={artifactDownloadUrl(API_URL, task.runSlug!, file.path)} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent"><span className="min-w-0 break-all text-sm font-medium">{file.name}</span><span className="ml-3 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">{bytes(file.size)}<Download className="h-4 w-4" /></span></a>)}</CardContent></Card>}
     <Button variant="outline" onClick={() => setShowLogs((value) => !value)}><Terminal className="h-4 w-4" />{showLogs ? "Hide Logs" : "Show Logs"}</Button>
     {showLogs && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Terminal className="h-5 w-5" />Logs</CardTitle></CardHeader><CardContent><div ref={logRef} className="h-[460px] overflow-y-auto rounded-md border bg-zinc-950 p-5 font-mono text-sm leading-relaxed text-zinc-100"><pre className="whitespace-pre-wrap">{logs || (active ? t("tasks.logs.preparing") : "No logs available.")}</pre></div></CardContent></Card>}
+    {canTestModel && task.runSlug && (
+      <ModelTestDialog
+        open={testOpen}
+        onOpenChange={setTestOpen}
+        runSlug={task.runSlug}
+        modelName={task.modelName}
+      />
+    )}
   </div>;
 }

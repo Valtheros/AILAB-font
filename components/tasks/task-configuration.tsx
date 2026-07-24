@@ -18,6 +18,13 @@ import { ConfigValue, TrainingConfig } from "@/lib/trainingConfig";
 
 const API_URL = apiBaseUrl();
 
+interface ResourcePlanPreview {
+  estimatedVramMb: number;
+  safeLimitMb: number;
+  isWithinLimit: boolean;
+  device?: string;
+}
+
 interface Dataset {
   id: string; name: string; images: number; size: string; formats: string[]; tasks: string[];
   datasetTask?: string; canonicalTask?: string; canonicalFormat?: string;
@@ -111,6 +118,33 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
   const datasetsForModel = useMemo(() => datasets.filter((dataset) => compatible(dataset, selectedModel, selectedTask.id)), [datasets, selectedModel, selectedTask.id]);
   const memory = useMemo(() => memorySafetyForModel(selectedModel, config), [config, selectedModel]);
 
+  // Backend estimate from resource_guard.py. The badges above are the client
+  // heuristic; this line shows the numbers the server actually decides with.
+  const [vram, setVram] = useState<ResourcePlanPreview | null>(null);
+  useEffect(() => {
+    if (catalogStatus !== "ready") return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`${API_URL}/api/resource-plan/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model_type: config.modelType,
+          batch_size: config.batchSize,
+          params: { ...config.params, device: config.device },
+        }),
+        signal: controller.signal,
+      })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => setVram(data))
+        .catch(() => undefined);
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [catalogStatus, config.modelType, config.batchSize, config.device, config.params]);
+
   const chooseTask = (taskId: string) => {
     const task = getTask(catalog, taskId); const model = task.models[0];
     onChange({ ...config, taskType: task.id, modelType: model.id, modelName: model.model_name, datasetName: "", params: defaultParamsFor(model, catalog.common_params) });
@@ -153,7 +187,18 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
       <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{selectedModel.params.map((spec) => <ParamInput key={spec.key} spec={spec} value={config.params[spec.key] ?? spec.default} onChange={(value) => updateParam(spec.key, value)} />)}</CardContent>
     </Card>
     <Card><CardHeader><div className="flex flex-wrap justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Memory Safety</CardTitle><CardDescription>{t("Helps prevent memory errors before training starts.")}</CardDescription></div><StatusBadge tone={memory.ok ? "success" : "warning"}>{memory.label}</StatusBadge></div></CardHeader>
-      <CardContent className="space-y-4"><div className="flex flex-wrap gap-2">{memory.summary.map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}</div>{!memory.ok && <div className="rounded-md border border-amber-400/40 bg-amber-500/10 p-3 text-sm"><ul className="list-disc space-y-1 pl-5">{[...memory.issues, ...memory.suggestions].map((item) => <li key={item}>{t(item)}</li>)}</ul></div>}<Button variant="outline" onClick={() => { const next = { ...config, params: { ...config.params } }; for (const [key, value] of safeDefaultEntries(selectedModel)) { next.params[key] = value; if (key === "batch_size") next.batchSize = Number(value); if (key === "workers") next.workers = Number(value); if (key === "amp") next.amp = Boolean(value); } onChange(next); }}>Apply safe settings</Button></CardContent>
+      <CardContent className="space-y-4"><div className="flex flex-wrap gap-2">{memory.summary.map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}</div>
+        {vram && (
+          <div className={`flex items-start gap-2 rounded-md border p-3 text-sm ${vram.isWithinLimit ? "border-emerald-500/40 bg-emerald-500/10" : "border-amber-500/40 bg-amber-500/10"}`}>
+            <span aria-hidden="true">{vram.isWithinLimit ? "✅" : "⚠️"}</span>
+            <p className="min-w-0">
+              {t("config.vram.estimate")
+                .replace("{estimated}", vram.estimatedVramMb.toLocaleString())
+                .replace("{limit}", vram.safeLimitMb.toLocaleString())}
+              {!vram.isWithinLimit && <span className="ml-1 font-medium">{t("config.vram.over")}</span>}
+            </p>
+          </div>
+        )}{!memory.ok && <div className="rounded-md border border-amber-400/40 bg-amber-500/10 p-3 text-sm"><ul className="list-disc space-y-1 pl-5">{[...memory.issues, ...memory.suggestions].map((item) => <li key={item}>{t(item)}</li>)}</ul></div>}<Button variant="outline" onClick={() => { const next = { ...config, params: { ...config.params } }; for (const [key, value] of safeDefaultEntries(selectedModel)) { next.params[key] = value; if (key === "batch_size") next.batchSize = Number(value); if (key === "workers") next.workers = Number(value); if (key === "amp") next.amp = Boolean(value); } onChange(next); }}>Apply safe settings</Button></CardContent>
     </Card>
     <div className="flex justify-end pb-8"><Button size="lg" onClick={onTrain} disabled={starting || saveState !== "saved" || !config.datasetName || !memory.ok}>{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}Train</Button></div>
   </div>;
