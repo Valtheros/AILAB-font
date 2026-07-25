@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, ChevronDown, Clock3, Cpu, Database, Loader2, Plus, Trash2 } from "lucide-react";
+import { BarChart3, CalendarClock, ChevronDown, Clock3, Cpu, Database, Loader2, Plus, Trash2 } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { CompareRunsDialog } from "@/components/tasks/compare-runs-dialog";
 import { EmptyState } from "@/components/workspace/empty-state";
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
@@ -28,16 +29,31 @@ function tone(status: string): StatusTone {
   return "neutral";
 }
 
-function TaskCard({ task, onDelete, compact = false }: { task: TrainingTask; onDelete: () => void; compact?: boolean }) {
+function TaskCard({ task, onDelete, compact = false, selectable = false, selected = false, onToggleSelect }: { task: TrainingTask; onDelete: () => void; compact?: boolean; selectable?: boolean; selected?: boolean; onToggleSelect?: () => void }) {
   const router = useRouter();
   const updated = task.updatedAt ? new Date(task.updatedAt).toLocaleString() : "-";
   return (
-    <Card className="min-w-0 cursor-pointer overflow-hidden transition-colors hover:border-foreground/40 hover:bg-accent/30" onClick={() => router.push(`/tasks/${task.id}`)}>
+    <Card className={`min-w-0 cursor-pointer overflow-hidden transition-colors hover:border-foreground/40 hover:bg-accent/30 ${selected ? "border-foreground ring-1 ring-foreground" : ""}`} onClick={() => router.push(`/tasks/${task.id}`)}>
       <CardHeader className={compact ? "gap-2 p-4" : "gap-4"}>
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <CardTitle className="break-words text-lg">{task.displayName}</CardTitle>
-            <CardDescription className="mt-1 capitalize">{task.taskType.replaceAll("_", " ")}</CardDescription>
+          <div className="flex min-w-0 items-start gap-3">
+            {selectable && (
+              <input
+                type="checkbox"
+                checked={selected}
+                aria-label={`Select ${task.displayName} for comparison`}
+                className="mt-1.5 h-4 w-4 shrink-0 cursor-pointer accent-foreground"
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  event.stopPropagation();
+                  onToggleSelect?.();
+                }}
+              />
+            )}
+            <div className="min-w-0">
+              <CardTitle className="break-words text-lg">{task.displayName}</CardTitle>
+              <CardDescription className="mt-1 capitalize">{task.taskType.replaceAll("_", " ")}</CardDescription>
+            </div>
           </div>
           <StatusBadge className="shrink-0" tone={tone(task.status)}>{task.status}</StatusBadge>
         </div>
@@ -82,6 +98,8 @@ export default function TasksPage() {
   const [error, setError] = useState("");
   const [deleteTask, setDeleteTask] = useState<TrainingTask | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,6 +123,34 @@ export default function TasksPage() {
     Active: tasks.filter((task) => ACTIVE.has(task.status)),
     History: tasks.filter((task) => task.status !== "draft" && !ACTIVE.has(task.status)),
   }), [tasks]);
+
+  // Only finished runs carry metrics, so selection is limited to History.
+  const comparable = useMemo(
+    () => groups.History.filter((task) => task.status === "completed" && task.runSlug),
+    [groups.History],
+  );
+  const selectedTasks = useMemo(
+    () => comparable.filter((task) => selectedIds.includes(task.id)),
+    [comparable, selectedIds],
+  );
+  const selectedDatasets = new Set(selectedTasks.map((task) => task.datasetName || ""));
+  const sameDataset = selectedDatasets.size === 1;
+  const canCompare = selectedTasks.length >= 2 && selectedTasks.length <= 4 && sameDataset;
+  const compareHint = !selectedTasks.length
+    ? ""
+    : selectedTasks.length < 2
+      ? t("compare.hint.needTwo")
+      : selectedTasks.length > 4
+        ? t("compare.hint.maxFour")
+        : !sameDataset
+          ? t("compare.hint.sameDataset")
+          : "";
+
+  const toggleSelect = (task: TrainingTask) => {
+    setSelectedIds((current) =>
+      current.includes(task.id) ? current.filter((id) => id !== task.id) : [...current, task.id],
+    );
+  };
 
   const confirmDelete = async () => {
     if (!deleteTask) return;
@@ -147,8 +193,40 @@ export default function TasksPage() {
                 <h2 className="text-lg font-semibold">History ({groups.History.length})</h2>
                 {groups.History.length > 3 && <Button className="h-8 w-8" variant="ghost" size="icon" aria-label="View all history" title="View all history" onClick={() => setShowHistory(true)}><ChevronDown className="h-5 w-5" /></Button>}
               </div>
+              {comparable.length >= 2 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-accent/30 p-3">
+                  <div className="min-w-0 text-sm">
+                    <p className="font-medium">
+                      {t("compare.selected").replace("{count}", String(selectedTasks.length))}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {compareHint || t("compare.hint.ready")}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    {selectedTasks.length > 0 && (
+                      <Button variant="ghost" onClick={() => setSelectedIds([])}>
+                        {t("compare.button.clear")}
+                      </Button>
+                    )}
+                    <Button disabled={!canCompare} onClick={() => setCompareOpen(true)}>
+                      <BarChart3 className="h-4 w-4" />
+                      {t("compare.button.compare")}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {groups.History.slice(0, 3).map((task) => <TaskCard key={task.id} task={task} onDelete={() => setDeleteTask(task)} />)}
+                {groups.History.slice(0, 3).map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onDelete={() => setDeleteTask(task)}
+                    selectable={comparable.some((item) => item.id === task.id)}
+                    selected={selectedIds.includes(task.id)}
+                    onToggleSelect={() => toggleSelect(task)}
+                  />
+                ))}
               </div>
             </section>
           )}
@@ -161,10 +239,28 @@ export default function TasksPage() {
             <DialogDescription>{groups.History.length} completed or failed tasks</DialogDescription>
           </DialogHeader>
           <div className="grid min-h-0 min-w-0 flex-1 auto-rows-max content-start gap-3 overflow-x-hidden overflow-y-auto pr-1 md:grid-cols-2">
-            {groups.History.map((task) => <TaskCard compact key={task.id} task={task} onDelete={() => { setShowHistory(false); setDeleteTask(task); }} />)}
+            {groups.History.map((task) => (
+              <TaskCard
+                compact
+                key={task.id}
+                task={task}
+                onDelete={() => { setShowHistory(false); setDeleteTask(task); }}
+                selectable={comparable.some((item) => item.id === task.id)}
+                selected={selectedIds.includes(task.id)}
+                onToggleSelect={() => toggleSelect(task)}
+              />
+            ))}
           </div>
         </DialogContent>
       </Dialog>
+      {canCompare && (
+        <CompareRunsDialog
+          open={compareOpen}
+          onOpenChange={setCompareOpen}
+          datasetSlug={selectedTasks[0]?.datasetName ?? ""}
+          runIds={selectedTasks.map((task) => task.id)}
+        />
+      )}
       <AlertDialog open={Boolean(deleteTask)} onOpenChange={(open) => !open && setDeleteTask(null)}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Delete task?</AlertDialogTitle>
