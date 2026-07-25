@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, CircleGauge, Download, Loader2, Sparkles, Square, Terminal, Trophy } from "lucide-react";
+import { Activity, CircleGauge, Download, Loader2, Sparkles, Square, Target, Terminal, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,7 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const [stopping, setStopping] = useState(false);
   const [streamError, setStreamError] = useState("");
   const [testOpen, setTestOpen] = useState(false);
+  const [testEval, setTestEval] = useState<{ test_accuracy?: number; test_loss?: number; test_images?: number; checkpoint?: string } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setStatus(task.status); }, [task.status]);
@@ -58,6 +59,18 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
       .then((response) => response.ok ? response.json() : { metrics: [] })
       .then((data) => setMetrics(data.metrics ?? []))
       .catch(() => setMetrics([]));
+  }, [task.runSlug]);
+
+  // Optional held-out test result, written by the trainer only when the
+  // dataset shipped a test/ split. Fetched via the existing artifact endpoint,
+  // so a run without it simply 404s and no box is shown.
+  useEffect(() => {
+    if (!task.runSlug) return;
+    setTestEval(null);
+    fetch(`${API_URL}/api/runs/${encodeURIComponent(task.runSlug)}/files/test_evaluation.json`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => setTestEval(data))
+      .catch(() => setTestEval(null));
   }, [task.runSlug]);
 
   useEffect(() => {
@@ -104,6 +117,28 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
       <Card><CardHeader><div className="flex justify-between"><div><CardTitle>Progress</CardTitle><CardDescription>{progress.toFixed(1)}% complete</CardDescription></div><Badge variant="outline">Epoch {Math.round(epoch)}</Badge></div></CardHeader><CardContent><Progress value={progress} className="h-3" /></CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><CircleGauge className="h-5 w-5" />Latest Metrics</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">{(keys.length ? keys.slice(0, 8) : ["train/loss", "val/loss", "val/accuracy", "lr"]).map((key) => <div key={key} className="rounded-md border p-3"><p className="break-words text-xs text-muted-foreground">{key}</p><p className="mt-2 text-xl font-semibold">{formatMetricValue(key, latest?.[key])}</p></div>)}</CardContent></Card>
     </div>
+    {testEval && typeof testEval.test_accuracy === "number" && (
+      <Card className="border-emerald-500/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5" />{t("test.eval.title")}</CardTitle>
+          <CardDescription>{t("test.eval.description")}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border bg-emerald-500/10 p-4">
+            <p className="text-xs text-muted-foreground">{t("test.eval.accuracy")}</p>
+            <p className="mt-1 text-3xl font-semibold">{(testEval.test_accuracy * 100).toFixed(2)}%</p>
+          </div>
+          <div className="rounded-md border p-4">
+            <p className="text-xs text-muted-foreground">{t("test.eval.loss")}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{typeof testEval.test_loss === "number" ? testEval.test_loss.toFixed(4) : "-"}</p>
+          </div>
+          <div className="rounded-md border p-4">
+            <p className="text-xs text-muted-foreground">{t("test.eval.images")}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{testEval.test_images ?? "-"}</p>
+          </div>
+        </CardContent>
+      </Card>
+    )}
     {metrics.length > 0 && <MetricsCharts metrics={metrics} />}
     {TERMINAL.has(status) && files.length > 0 && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Trophy className="h-5 w-5" />Artifacts</CardTitle><CardDescription>{t("tasks.artifacts.description")}</CardDescription></CardHeader><CardContent className="grid gap-2 md:grid-cols-2">{files.map((file) => <a key={file.path} href={artifactDownloadUrl(API_URL, task.runSlug!, file.path)} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent"><span className="min-w-0 break-all text-sm font-medium">{file.name}</span><span className="ml-3 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">{bytes(file.size)}<Download className="h-4 w-4" /></span></a>)}</CardContent></Card>}
     <Button variant="outline" onClick={() => setShowLogs((value) => !value)}><Terminal className="h-4 w-4" />{showLogs ? "Hide Logs" : "Show Logs"}</Button>
