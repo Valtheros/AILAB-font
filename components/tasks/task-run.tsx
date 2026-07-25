@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { MetricsCharts, formatMetricValue, type MetricRow } from "@/components/workspace/metrics-charts";
 import { ModelTestDialog } from "@/components/tasks/model-test-dialog";
+import { InsightList, type Insight } from "@/components/tasks/insight-list";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
 import type { TrainingTask } from "@/lib/trainingConfig";
@@ -44,6 +45,7 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const [streamError, setStreamError] = useState("");
   const [testOpen, setTestOpen] = useState(false);
   const [testEval, setTestEval] = useState<{ test_accuracy?: number; test_loss?: number; test_images?: number; checkpoint?: string } | null>(null);
+  const [insights, setInsights] = useState<Insight[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setStatus(task.status); }, [task.status]);
@@ -57,8 +59,8 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     if (!task.runSlug) return;
     fetch(`${API_URL}/api/metrics/${encodeURIComponent(task.runSlug)}`)
       .then((response) => response.ok ? response.json() : { metrics: [] })
-      .then((data) => setMetrics(data.metrics ?? []))
-      .catch(() => setMetrics([]));
+      .then((data) => { setMetrics(data.metrics ?? []); setInsights(data.insights ?? []); })
+      .catch(() => { setMetrics([]); setInsights([]); });
   }, [task.runSlug]);
 
   // Optional held-out test result, written by the trainer only when the
@@ -139,6 +141,7 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
         </CardContent>
       </Card>
     )}
+    {insights.length > 0 && <InsightList insights={insights} titleKey="insight.section.title" />}
     {metrics.length > 0 && <MetricsCharts metrics={metrics} />}
     {TERMINAL.has(status) && files.length > 0 && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Trophy className="h-5 w-5" />Artifacts</CardTitle><CardDescription>{t("tasks.artifacts.description")}</CardDescription></CardHeader><CardContent className="grid gap-2 md:grid-cols-2">{files.map((file) => <a key={file.path} href={artifactDownloadUrl(API_URL, task.runSlug!, file.path)} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent"><span className="min-w-0 break-all text-sm font-medium">{file.name}</span><span className="ml-3 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">{bytes(file.size)}<Download className="h-4 w-4" /></span></a>)}</CardContent></Card>}
     <Button variant="outline" onClick={() => setShowLogs((value) => !value)}><Terminal className="h-4 w-4" />{showLogs ? "Hide Logs" : "Show Logs"}</Button>

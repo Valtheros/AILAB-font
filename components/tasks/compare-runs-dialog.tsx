@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiBaseUrl } from "@/lib/api";
+import { InsightList, type Insight } from "@/components/tasks/insight-list";
 import { useLanguage } from "@/components/language-provider";
 
 const API_URL = apiBaseUrl();
@@ -54,6 +55,7 @@ interface CompareResponse {
   runs: CompareRun[];
   sharedMetric: { key: string; label: string; direction: string } | null;
   warnings: string[];
+  insights: Insight[];
 }
 
 /** Turn per-run series into the row-per-epoch shape Recharts expects. */
@@ -283,6 +285,10 @@ export function CompareRunsDialog({
                 </tbody>
               </table>
             </div>
+          )}
+
+          {data && data.insights?.length > 0 && (
+            <InsightList insights={data.insights} titleKey="insight.section.compareTitle" />
           )}
         </div>
       </DialogContent>
