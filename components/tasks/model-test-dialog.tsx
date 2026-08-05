@@ -23,15 +23,34 @@ interface Prediction {
   className: string;
   confidence: number;
   percent: number;
+  // Present only for detection results: [x1, y1, x2, y2] in original pixels.
+  box?: [number, number, number, number];
 }
 
 interface PredictResponse {
+  taskType?: string;
   predictions: Prediction[];
-  top: Prediction | null;
+  top?: Prediction | null;
   classes: string[];
-  model: { architecture: string; checkpoint: string; imageSize: number; device: string };
+  model: { architecture: string; checkpoint: string; imageSize?: number; device: string };
   image: { width: number; height: number };
   timingMs: { modelLoad: number; inference: number; total: number };
+  // Detection-only fields.
+  count?: number;
+  counts?: Record<string, number>;
+  threshold?: number;
+}
+
+// Distinct, high-contrast hues cycled per class so overlaid boxes stay legible
+// on both light and dark images.
+const BOX_COLOURS = [
+  "#ef4444", "#3b82f6", "#22c55e", "#f59e0b",
+  "#a855f7", "#ec4899", "#06b6d4", "#84cc16",
+];
+
+function colourForClass(classes: string[], name: string) {
+  const index = Math.max(0, classes.indexOf(name));
+  return BOX_COLOURS[index % BOX_COLOURS.length];
 }
 
 export function ModelTestDialog({
@@ -96,6 +115,8 @@ export function ModelTestDialog({
       return URL.createObjectURL(next);
     });
   };
+
+  const isDetection = result?.taskType === "object_detection";
 
   const predict = async () => {
     if (!file) return;
@@ -163,13 +184,49 @@ export function ModelTestDialog({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="relative overflow-hidden rounded-md border bg-muted/30">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={previewUrl}
-                  alt={file?.name ?? "preview"}
-                  className="mx-auto max-h-[280px] w-auto object-contain"
-                />
+              <div className="relative flex justify-center overflow-hidden rounded-md border bg-muted/30">
+                {/* Tight inline-block wrapper so the detection overlay's
+                    percentage coordinates line up with the rendered image
+                    exactly, regardless of how the image is scaled to fit. */}
+                <div className="relative inline-block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={previewUrl}
+                    alt={file?.name ?? "preview"}
+                    className="block max-h-[320px] w-auto max-w-full"
+                  />
+                  {isDetection && result && (
+                    <div className="pointer-events-none absolute inset-0">
+                      {result.predictions.map((prediction, index) => {
+                        if (!prediction.box) return null;
+                        const [x1, y1, x2, y2] = prediction.box;
+                        const w = result.image.width || 1;
+                        const h = result.image.height || 1;
+                        const colour = colourForClass(result.classes, prediction.className);
+                        return (
+                          <div
+                            key={index}
+                            className="absolute"
+                            style={{
+                              left: `${(x1 / w) * 100}%`,
+                              top: `${(y1 / h) * 100}%`,
+                              width: `${((x2 - x1) / w) * 100}%`,
+                              height: `${((y2 - y1) / h) * 100}%`,
+                              border: `2px solid ${colour}`,
+                            }}
+                          >
+                            <span
+                              className="absolute left-0 top-0 -translate-y-full whitespace-nowrap px-1 text-[10px] font-semibold leading-tight text-white"
+                              style={{ backgroundColor: colour }}
+                            >
+                              {prediction.className} {prediction.percent}%
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 <Button
                   variant="secondary"
                   size="icon"
@@ -214,7 +271,58 @@ export function ModelTestDialog({
             </div>
           )}
 
-          {result && (
+          {result && isDetection && (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-accent/30 p-4">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">{t("test.detect.summary")}</p>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {result.count ?? result.predictions.length}
+                  </p>
+                </div>
+                {typeof result.threshold === "number" && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("test.detect.threshold").replace("{value}", String(Math.round(result.threshold * 100)))}
+                  </p>
+                )}
+              </div>
+
+              {result.predictions.length === 0 ? (
+                <p className="rounded-md border p-3 text-sm text-muted-foreground">{t("test.detect.none")}</p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{t("test.detect.objects")}</p>
+                  {result.predictions.map((prediction, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span
+                          aria-hidden="true"
+                          className="h-3 w-3 shrink-0 rounded-sm"
+                          style={{ backgroundColor: colourForClass(result.classes, prediction.className) }}
+                        />
+                        <span className="break-words">{prediction.className}</span>
+                      </span>
+                      <span className="shrink-0 font-semibold tabular-nums">{prediction.percent}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 border-t pt-3 text-xs text-muted-foreground">
+                <StatusBadge tone="neutral">{result.model.architecture}</StatusBadge>
+                <StatusBadge tone="neutral">{result.model.device}</StatusBadge>
+                <StatusBadge tone="neutral">
+                  {result.image.width}×{result.image.height}px
+                </StatusBadge>
+                <StatusBadge tone="success">{result.timingMs.total} ms</StatusBadge>
+              </div>
+            </div>
+          )}
+
+          {result && !isDetection && (
             <div className="space-y-4">
               <div className="rounded-md border bg-accent/30 p-4">
                 <p className="text-xs text-muted-foreground">{t("test.result.top")}</p>

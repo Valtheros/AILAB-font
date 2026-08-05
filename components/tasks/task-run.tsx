@@ -96,10 +96,13 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const keys = useMemo(() => latest ? Object.keys(latest).filter((key) => key !== "epoch" && number(latest, key) !== undefined) : [], [latest]);
   const active = !TERMINAL.has(status);
   const files = (task.files ?? []).filter((file) => ["pt", "pth", "csv", "log", "json"].some((extension) => file.name.endsWith(`.${extension}`)));
-  // Model testing is image-classification only for now: detection and
-  // segmentation results need box/mask rendering the dialog does not do.
+  // Model testing supports classification (top-k labels) and object detection
+  // (bounding boxes). Segmentation still needs mask rendering the dialog does
+  // not do yet.
   const canTestModel =
-    status === "completed" && task.taskType === "image_classification" && Boolean(task.runSlug);
+    status === "completed" &&
+    ["image_classification", "object_detection"].includes(task.taskType) &&
+    Boolean(task.runSlug);
 
   const stop = async () => {
     setStopping(true);
