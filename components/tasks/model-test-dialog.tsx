@@ -27,9 +27,30 @@ interface Prediction {
   box?: [number, number, number, number];
 }
 
+interface LegendEntry {
+  name: string;
+  color: string;
+  percent: number;
+}
+
+interface Instance {
+  className: string;
+  color: string;
+  percent: number;
+  box: [number, number, number, number];
+}
+
+interface Segmentation {
+  kind: "semantic" | "instance";
+  overlay: string; // data:image/png;base64,... sized to the original image
+  legend?: LegendEntry[]; // semantic: per-class coverage
+  instances?: Instance[]; // instance: one entry per detected object
+  counts?: Record<string, number>;
+}
+
 interface PredictResponse {
   taskType?: string;
-  predictions: Prediction[];
+  predictions?: Prediction[];
   top?: Prediction | null;
   classes: string[];
   model: { architecture: string; checkpoint: string; imageSize?: number; device: string };
@@ -39,6 +60,8 @@ interface PredictResponse {
   count?: number;
   counts?: Record<string, number>;
   threshold?: number;
+  // Segmentation-only field.
+  segmentation?: Segmentation;
 }
 
 // Distinct, high-contrast hues cycled per class so overlaid boxes stay legible
@@ -117,6 +140,7 @@ export function ModelTestDialog({
   };
 
   const isDetection = result?.taskType === "object_detection";
+  const isSegmentation = result?.taskType === "segmentation";
 
   const predict = async () => {
     if (!file) return;
@@ -195,9 +219,19 @@ export function ModelTestDialog({
                     alt={file?.name ?? "preview"}
                     className="block max-h-[320px] w-auto max-w-full"
                   />
+                  {isSegmentation && result?.segmentation && (
+                    // The overlay PNG is exactly the original image's size, so
+                    // stretching it to the rendered image lines masks up 1:1.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={result.segmentation.overlay}
+                      alt="segmentation overlay"
+                      className="pointer-events-none absolute inset-0 h-full w-full"
+                    />
+                  )}
                   {isDetection && result && (
                     <div className="pointer-events-none absolute inset-0">
-                      {result.predictions.map((prediction, index) => {
+                      {(result.predictions ?? []).map((prediction, index) => {
                         if (!prediction.box) return null;
                         const [x1, y1, x2, y2] = prediction.box;
                         const w = result.image.width || 1;
@@ -277,7 +311,7 @@ export function ModelTestDialog({
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-xs text-muted-foreground">{t("test.detect.summary")}</p>
                   <p className="text-2xl font-semibold tabular-nums">
-                    {result.count ?? result.predictions.length}
+                    {result.count ?? result.predictions?.length ?? 0}
                   </p>
                 </div>
                 {typeof result.threshold === "number" && (
@@ -287,12 +321,12 @@ export function ModelTestDialog({
                 )}
               </div>
 
-              {result.predictions.length === 0 ? (
+              {(result.predictions?.length ?? 0) === 0 ? (
                 <p className="rounded-md border p-3 text-sm text-muted-foreground">{t("test.detect.none")}</p>
               ) : (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">{t("test.detect.objects")}</p>
-                  {result.predictions.map((prediction, index) => (
+                  {(result.predictions ?? []).map((prediction, index) => (
                     <div
                       key={index}
                       className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm"
@@ -322,7 +356,66 @@ export function ModelTestDialog({
             </div>
           )}
 
-          {result && !isDetection && (
+          {result && isSegmentation && result.segmentation && (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-accent/30 p-4">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    {result.segmentation.kind === "instance" ? t("test.detect.summary") : t("test.seg.classes")}
+                  </p>
+                  <p className="text-2xl font-semibold tabular-nums">{result.count ?? 0}</p>
+                </div>
+              </div>
+
+              {result.segmentation.kind === "instance" ? (
+                (result.segmentation.instances?.length ?? 0) === 0 ? (
+                  <p className="rounded-md border p-3 text-sm text-muted-foreground">{t("test.detect.none")}</p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">{t("test.detect.objects")}</p>
+                    {(result.segmentation.instances ?? []).map((instance, index) => (
+                      <div key={index} className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: instance.color }} />
+                          <span className="break-words">{instance.className}</span>
+                        </span>
+                        <span className="shrink-0 font-semibold tabular-nums">{instance.percent}%</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (result.segmentation.legend?.length ?? 0) === 0 ? (
+                <p className="rounded-md border p-3 text-sm text-muted-foreground">{t("test.seg.none")}</p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{t("test.seg.coverage")}</p>
+                  {(result.segmentation.legend ?? []).map((entry, index) => (
+                    <div key={index} className="space-y-1.5">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="flex min-w-0 items-center gap-2 text-sm">
+                          <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: entry.color }} />
+                          <span className="break-words">{entry.name}</span>
+                        </span>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums">{entry.percent}%</span>
+                      </div>
+                      <Progress value={entry.percent} className="h-2.5" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 border-t pt-3 text-xs text-muted-foreground">
+                <StatusBadge tone="neutral">{result.model.architecture}</StatusBadge>
+                <StatusBadge tone="neutral">{result.model.device}</StatusBadge>
+                <StatusBadge tone="neutral">
+                  {result.image.width}×{result.image.height}px
+                </StatusBadge>
+                <StatusBadge tone="success">{result.timingMs.total} ms</StatusBadge>
+              </div>
+            </div>
+          )}
+
+          {result && !isDetection && !isSegmentation && (
             <div className="space-y-4">
               <div className="rounded-md border bg-accent/30 p-4">
                 <p className="text-xs text-muted-foreground">{t("test.result.top")}</p>
@@ -336,7 +429,7 @@ export function ModelTestDialog({
 
               <div className="space-y-3">
                 <p className="text-sm font-medium">{t("test.result.all")}</p>
-                {result.predictions.map((prediction, index) => (
+                {(result.predictions ?? []).map((prediction, index) => (
                   <div key={prediction.className} className="space-y-1.5">
                     <div className="flex items-baseline justify-between gap-3">
                       <span className="min-w-0 break-words text-sm">
