@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { useLanguage } from "@/components/language-provider";
 import { apiBaseUrl } from "@/lib/api";
-import { CVCatalog, ModelSpec, ParamSpec, catalogPlaceholder, defaultParamsFor, getModel, getTask } from "@/lib/cvCatalog";
+import { CVCatalog, ModelSpec, ParamSpec, catalogPlaceholder, modelDefaults, getModel, getTask } from "@/lib/cvCatalog";
 import { memorySafetyForModel, safeDefaultEntries } from "@/lib/resourceSafety";
 import { ConfigValue, TrainingConfig } from "@/lib/trainingConfig";
 
@@ -100,7 +100,8 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
   useEffect(() => {
     if (catalogStatus !== "ready") return;
     if (config.taskType !== selectedTask.id || config.modelType !== selectedModel.id) {
-      onChange({ ...config, taskType: selectedTask.id, modelType: selectedModel.id, modelName: selectedModel.model_name, datasetName: "", params: defaultParamsFor(selectedModel, catalog.common_params) }, false);
+      const defaults = modelDefaults(selectedModel, catalog.common_params);
+      onChange({ ...config, taskType: selectedTask.id, modelType: selectedModel.id, modelName: selectedModel.model_name, datasetName: "", params: defaults.params, batchSize: defaults.batchSize, workers: defaults.workers, amp: defaults.amp }, false);
     }
   }, [catalogStatus, selectedModel, selectedTask.id]);
 
@@ -147,9 +148,13 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
 
   const chooseTask = (taskId: string) => {
     const task = getTask(catalog, taskId); const model = task.models[0];
-    onChange({ ...config, taskType: task.id, modelType: model.id, modelName: model.model_name, datasetName: "", params: defaultParamsFor(model, catalog.common_params) });
+    const defaults = modelDefaults(model, catalog.common_params);
+    onChange({ ...config, taskType: task.id, modelType: model.id, modelName: model.model_name, datasetName: "", params: defaults.params, batchSize: defaults.batchSize, workers: defaults.workers, amp: defaults.amp });
   };
-  const chooseModel = (model: ModelSpec) => onChange({ ...config, modelType: model.id, modelName: model.model_name, datasetName: "", params: { ...defaultParamsFor(model, catalog.common_params), device: config.device } });
+  const chooseModel = (model: ModelSpec) => {
+    const defaults = modelDefaults(model, catalog.common_params);
+    onChange({ ...config, modelType: model.id, modelName: model.model_name, datasetName: "", params: { ...defaults.params, device: config.device }, batchSize: defaults.batchSize, workers: defaults.workers, amp: defaults.amp });
+  };
   const commonValue = (spec: ParamSpec) => ({ epochs: config.epochs, batch_size: config.batchSize, device: config.device, workers: config.workers, amp: config.amp, seed: config.seed } as Record<string, ConfigValue>)[spec.key] ?? config.params[spec.key] ?? spec.default;
   const updateCommon = (spec: ParamSpec, value: ConfigValue) => {
     const next = { ...config, params: { ...config.params, [spec.key]: value } };

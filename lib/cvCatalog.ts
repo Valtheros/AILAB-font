@@ -104,3 +104,29 @@ export function defaultParamsFor(model: ModelSpec, commonParams: ParamSpec[]) {
     {},
   );
 }
+
+/**
+ * Per-model starting defaults. The shared common_params default batch_size to
+ * 16, which is fine for classification but far over budget for the memory-heavy
+ * detectors/segmenters (Faster/Mask R-CNN, DeepLabV3+ recommend batch 2). This
+ * overlays each model's own safe_defaults so a freshly selected model starts
+ * inside its memory budget instead of tripping the VRAM guard immediately.
+ *
+ * Returns the params map plus the top-level scalars the form tracks separately
+ * (batchSize/workers/amp), all sourced from safe_defaults where available.
+ */
+export function modelDefaults(model: ModelSpec, commonParams: ParamSpec[]) {
+  const params = defaultParamsFor(model, commonParams);
+  const safe = model.safe_defaults ?? {};
+  for (const [key, value] of Object.entries(safe)) {
+    // Only overlay keys that are real params for this model, so no unknown key
+    // reaches the backend's param validation.
+    if (key in params) params[key] = value as number | boolean | string;
+  }
+  return {
+    params,
+    batchSize: Number(safe.batch_size ?? params.batch_size ?? 16),
+    workers: Number(safe.workers ?? params.workers ?? 4),
+    amp: Boolean(safe.amp ?? params.amp ?? true),
+  };
+}
