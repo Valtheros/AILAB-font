@@ -44,7 +44,7 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const [stopping, setStopping] = useState(false);
   const [streamError, setStreamError] = useState("");
   const [testOpen, setTestOpen] = useState(false);
-  const [testEval, setTestEval] = useState<{ test_accuracy?: number; test_loss?: number; test_images?: number; checkpoint?: string } | null>(null);
+  const [testEval, setTestEval] = useState<{ test_accuracy?: number; test_loss?: number; test_images?: number; checkpoint?: string; test_map50?: number; test_map50_95?: number; test_precision?: number; test_recall?: number; test_pixel_accuracy?: number; test_mean_iou?: number } | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -96,12 +96,11 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const keys = useMemo(() => latest ? Object.keys(latest).filter((key) => key !== "epoch" && number(latest, key) !== undefined) : [], [latest]);
   const active = !TERMINAL.has(status);
   const files = (task.files ?? []).filter((file) => ["pt", "pth", "csv", "log", "json"].some((extension) => file.name.endsWith(`.${extension}`)));
-  // Model testing supports classification (top-k labels) and object detection
-  // (bounding boxes). Segmentation still needs mask rendering the dialog does
-  // not do yet.
+  // Model testing supports classification (top-k labels), object detection
+  // (bounding boxes), and segmentation (mask overlay).
   const canTestModel =
     status === "completed" &&
-    ["image_classification", "object_detection"].includes(task.taskType) &&
+    ["image_classification", "object_detection", "segmentation"].includes(task.taskType) &&
     Boolean(task.runSlug);
 
   const stop = async () => {
@@ -111,6 +110,61 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     if (response.ok) setStatus(data.status || "stopping"); else setStreamError(data.detail || "Stop failed");
     setStopping(false);
   };
+
+  // Held-out test-set result, shaped per task: classification=accuracy,
+  // detection(YOLO)=mAP, semantic=pixel accuracy + mIoU, instance/Faster
+  // R-CNN=test loss. The first matching metric decides how the box reads.
+  const testEvalCard = (() => {
+    const te = testEval;
+    if (!te) return null;
+    const pct = (value: number) => `${(value * 100).toFixed(2)}%`;
+    let title = t("test.eval.title");
+    let cells: { label: string; value: string; highlight?: boolean }[] = [];
+    if (typeof te.test_map50 === "number") {
+      title = t("test.eval.titleDetection");
+      cells = [
+        { label: t("test.eval.map50"), value: pct(te.test_map50), highlight: true },
+        { label: t("test.eval.map"), value: typeof te.test_map50_95 === "number" ? pct(te.test_map50_95) : "-" },
+        { label: t("test.eval.images"), value: String(te.test_images ?? "-") },
+      ];
+    } else if (typeof te.test_pixel_accuracy === "number") {
+      title = t("test.eval.titleDetection");
+      cells = [
+        { label: t("test.eval.pixelAccuracy"), value: pct(te.test_pixel_accuracy), highlight: true },
+        { label: t("test.eval.miou"), value: typeof te.test_mean_iou === "number" ? pct(te.test_mean_iou) : "-" },
+        { label: t("test.eval.images"), value: String(te.test_images ?? "-") },
+      ];
+    } else if (typeof te.test_accuracy === "number") {
+      cells = [
+        { label: t("test.eval.accuracy"), value: pct(te.test_accuracy), highlight: true },
+        { label: t("test.eval.loss"), value: typeof te.test_loss === "number" ? te.test_loss.toFixed(4) : "-" },
+        { label: t("test.eval.images"), value: String(te.test_images ?? "-") },
+      ];
+    } else if (typeof te.test_loss === "number") {
+      title = t("test.eval.titleDetection");
+      cells = [
+        { label: t("test.eval.loss"), value: te.test_loss.toFixed(4), highlight: true },
+        { label: t("test.eval.images"), value: String(te.test_images ?? "-") },
+      ];
+    }
+    if (cells.length === 0) return null;
+    return (
+      <Card className="border-emerald-500/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5" />{title}</CardTitle>
+          <CardDescription>{t("test.eval.description")}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-3">
+          {cells.map((cell) => (
+            <div key={cell.label} className={`rounded-md border p-4 ${cell.highlight ? "bg-emerald-500/10" : ""}`}>
+              <p className="text-xs text-muted-foreground">{cell.label}</p>
+              <p className={`mt-1 font-semibold tabular-nums ${cell.highlight ? "text-3xl" : "text-2xl"}`}>{cell.value}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  })();
 
   return <div className="space-y-4">
     <div className="console-surface flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
@@ -122,28 +176,7 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
       <Card><CardHeader><div className="flex justify-between"><div><CardTitle>Progress</CardTitle><CardDescription>{progress.toFixed(1)}% complete</CardDescription></div><Badge variant="outline">Epoch {Math.round(epoch)}</Badge></div></CardHeader><CardContent><Progress value={progress} className="h-3" /></CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><CircleGauge className="h-5 w-5" />Latest Metrics</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">{(keys.length ? keys.slice(0, 8) : ["train/loss", "val/loss", "val/accuracy", "lr"]).map((key) => <div key={key} className="rounded-md border p-3"><p className="break-words text-xs text-muted-foreground">{key}</p><p className="mt-2 text-xl font-semibold">{formatMetricValue(key, latest?.[key])}</p></div>)}</CardContent></Card>
     </div>
-    {testEval && typeof testEval.test_accuracy === "number" && (
-      <Card className="border-emerald-500/40">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5" />{t("test.eval.title")}</CardTitle>
-          <CardDescription>{t("test.eval.description")}</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-md border bg-emerald-500/10 p-4">
-            <p className="text-xs text-muted-foreground">{t("test.eval.accuracy")}</p>
-            <p className="mt-1 text-3xl font-semibold">{(testEval.test_accuracy * 100).toFixed(2)}%</p>
-          </div>
-          <div className="rounded-md border p-4">
-            <p className="text-xs text-muted-foreground">{t("test.eval.loss")}</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{typeof testEval.test_loss === "number" ? testEval.test_loss.toFixed(4) : "-"}</p>
-          </div>
-          <div className="rounded-md border p-4">
-            <p className="text-xs text-muted-foreground">{t("test.eval.images")}</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{testEval.test_images ?? "-"}</p>
-          </div>
-        </CardContent>
-      </Card>
-    )}
+    {testEvalCard}
     {insights.length > 0 && <InsightList insights={insights} titleKey="insight.section.title" />}
     {metrics.length > 0 && <MetricsCharts metrics={metrics} />}
     {TERMINAL.has(status) && files.length > 0 && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Trophy className="h-5 w-5" />Artifacts</CardTitle><CardDescription>{t("tasks.artifacts.description")}</CardDescription></CardHeader><CardContent className="grid gap-2 md:grid-cols-2">{files.map((file) => <a key={file.path} href={artifactDownloadUrl(API_URL, task.runSlug!, file.path)} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent"><span className="min-w-0 break-all text-sm font-medium">{file.name}</span><span className="ml-3 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">{bytes(file.size)}<Download className="h-4 w-4" /></span></a>)}</CardContent></Card>}
