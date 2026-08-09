@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Boxes, CheckCircle, Cpu, Database, Loader2, Play, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Activity, Boxes, CheckCircle, Cpu, Database, Loader2, Play, Save, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,9 +70,10 @@ function ParamInput({ spec, value, onChange }: { spec: ParamSpec; value: ConfigV
   );
 }
 
-export function TaskConfiguration({ config, onChange, onTrain, saveState, starting }: {
+export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState, starting }: {
   config: TrainingConfig;
   onChange: (next: TrainingConfig, persist?: boolean) => void;
+  onSave: () => Promise<void>;
   onTrain: () => void;
   saveState: "unsaved" | "saved" | "saving" | "error";
   starting: boolean;
@@ -175,7 +176,7 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
   );
 
   return <div className="mx-auto max-w-5xl space-y-4">
-    <div className="flex justify-end"><StatusBadge tone={saveState === "error" ? "warning" : "neutral"}>{saveState === "unsaved" ? "Not saved yet" : saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : "Saved automatically"}</StatusBadge></div>
+    <div className="flex justify-end"><StatusBadge tone={saveState === "error" ? "warning" : "neutral"}>{saveState === "unsaved" ? "Unsaved" : saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : "Saved"}</StatusBadge></div>
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" />Task</CardTitle><CardDescription>{t("config.task.description")}</CardDescription></CardHeader>
       <CardContent className="grid gap-2 md:grid-cols-3">{catalog.tasks.map((task) => { const Icon = taskIcons[task.id] ?? Activity; const active = task.id === selectedTask.id; return <button key={task.id} onClick={() => chooseTask(task.id)} className={`rounded-md border p-4 text-left ${active ? "border-foreground bg-foreground text-background" : "hover:bg-accent"}`}><Icon className="mb-3 h-5 w-5" /><p className="font-medium">{task.label}</p><p className={`text-xs ${active ? "text-background/70" : "text-muted-foreground"}`}>{task.models.length} models</p></button>; })}</CardContent>
     </Card>
@@ -205,6 +206,11 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
           </div>
         )}{!memory.ok && <div className="rounded-md border border-amber-400/40 bg-amber-500/10 p-3 text-sm"><ul className="list-disc space-y-1 pl-5">{[...memory.issues, ...memory.suggestions].map((item) => <li key={item}>{t(item)}</li>)}</ul></div>}<Button variant="outline" onClick={() => { const next = { ...config, params: { ...config.params } }; for (const [key, value] of safeDefaultEntries(selectedModel)) { next.params[key] = value; if (key === "batch_size") next.batchSize = Number(value); if (key === "workers") next.workers = Number(value); if (key === "amp") next.amp = Boolean(value); } onChange(next); }}>Apply safe settings</Button></CardContent>
     </Card>
-    <div className="flex justify-end pb-8"><Button size="lg" onClick={onTrain} disabled={starting || saveState !== "saved" || !config.datasetName || !memory.ok}>{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}Train</Button></div>
+    <div className="flex flex-col justify-end gap-2 pb-8 sm:flex-row">
+      <Button variant="outline" size="lg" onClick={() => void onSave().catch(() => undefined)} disabled={saveState === "saving" || saveState === "saved"}>
+        {saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save draft
+      </Button>
+      <Button size="lg" onClick={onTrain} disabled={starting || saveState !== "saved" || !config.datasetName || !memory.ok}>{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}Train</Button>
+    </div>
   </div>;
 }

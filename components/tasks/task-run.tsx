@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, CircleGauge, Download, Loader2, Sparkles, Square, Target, Terminal, Trophy } from "lucide-react";
+import { Activity, ChartLine, CircleGauge, Download, Loader2, Sparkles, Square, Target, Terminal, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { MetricsCharts, formatMetricValue, type MetricRow } from "@/components/workspace/metrics-charts";
 import { ModelTestDialog } from "@/components/tasks/model-test-dialog";
+import { EvaluationCharts, type EvaluationArtifact } from "@/components/tasks/evaluation-charts";
 import { InsightList, type Insight } from "@/components/tasks/insight-list";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
@@ -46,6 +47,7 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const [testOpen, setTestOpen] = useState(false);
   const [testEval, setTestEval] = useState<{ test_accuracy?: number; test_loss?: number; test_images?: number; checkpoint?: string; test_map50?: number; test_map50_95?: number; test_precision?: number; test_recall?: number; test_pixel_accuracy?: number; test_mean_iou?: number } | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
+  const [evaluation, setEvaluation] = useState<EvaluationArtifact | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setStatus(task.status); }, [task.status]);
@@ -62,6 +64,14 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
       .then((data) => { setMetrics(data.metrics ?? []); setInsights(data.insights ?? []); })
       .catch(() => { setMetrics([]); setInsights([]); });
   }, [task.runSlug]);
+  useEffect(() => {
+    if (!task.runSlug) return;
+    setEvaluation(null);
+    fetch(`${API_URL}/api/runs/${encodeURIComponent(task.runSlug)}/files/evaluation_curves.json`)
+      .then((response) => response.ok ? response.json() : null)
+      .then(setEvaluation)
+      .catch(() => setEvaluation(null));
+  }, [task.runSlug, status]);
 
   // Optional held-out test result, written by the trainer only when the
   // dataset shipped a test/ split. Fetched via the existing artifact endpoint,
@@ -110,6 +120,26 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     if (response.ok) setStatus(data.status || "stopping"); else setStreamError(data.detail || "Stop failed");
     setStopping(false);
   };
+
+  // Plots ultralytics writes into a finished YOLO run. Shown only for the files
+  // that actually exist (older runs, or non-YOLO trainers, simply have none),
+  // resolved from the run's own file listing so no extra request is needed.
+  const yoloPlots = useMemo(() => {
+    if (!TERMINAL.has(status) || !task.runSlug) return [];
+    const wanted: { file: string; labelKey: string }[] = [
+      { file: "results.png", labelKey: "plots.results" },
+      { file: "confusion_matrix.png", labelKey: "plots.confusion" },
+      { file: "confusion_matrix_normalized.png", labelKey: "plots.confusionNormalized" },
+      { file: "BoxPR_curve.png", labelKey: "plots.pr" },
+      { file: "BoxF1_curve.png", labelKey: "plots.f1" },
+      { file: "BoxP_curve.png", labelKey: "plots.precision" },
+      { file: "BoxR_curve.png", labelKey: "plots.recall" },
+    ];
+    const available = new Map((task.files ?? []).map((file) => [file.name, file.path]));
+    return wanted
+      .filter((item) => available.has(item.file))
+      .map((item) => ({ ...item, path: available.get(item.file)! }));
+  }, [task.files, task.runSlug, status]);
 
   // Held-out test-set result, shaped per task: classification=accuracy,
   // detection(YOLO)=mAP, semantic=pixel accuracy + mIoU, instance/Faster
@@ -178,7 +208,36 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     </div>
     {testEvalCard}
     {insights.length > 0 && <InsightList insights={insights} titleKey="insight.section.title" />}
-    {metrics.length > 0 && <MetricsCharts metrics={metrics} />}
+    {metrics.length > 0 && !evaluation && <MetricsCharts metrics={metrics} />}
+    {evaluation && <EvaluationCharts artifact={evaluation} metrics={metrics} />}
+    {yoloPlots.length > 0 && (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><ChartLine className="h-5 w-5" />{t("plots.title")}</CardTitle>
+          <CardDescription>{t("plots.description")}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          {yoloPlots.map((plot) => (
+            <a
+              key={plot.file}
+              href={artifactDownloadUrl(API_URL, task.runSlug!, plot.path)}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border p-2 transition-colors hover:bg-accent"
+            >
+              <p className="mb-2 px-1 text-sm font-medium">{t(plot.labelKey)}</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={artifactDownloadUrl(API_URL, task.runSlug!, plot.path)}
+                alt={t(plot.labelKey)}
+                loading="lazy"
+                className="w-full rounded bg-white"
+              />
+            </a>
+          ))}
+        </CardContent>
+      </Card>
+    )}
     {TERMINAL.has(status) && files.length > 0 && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Trophy className="h-5 w-5" />Artifacts</CardTitle><CardDescription>{t("tasks.artifacts.description")}</CardDescription></CardHeader><CardContent className="grid gap-2 md:grid-cols-2">{files.map((file) => <a key={file.path} href={artifactDownloadUrl(API_URL, task.runSlug!, file.path)} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent"><span className="min-w-0 break-all text-sm font-medium">{file.name}</span><span className="ml-3 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">{bytes(file.size)}<Download className="h-4 w-4" /></span></a>)}</CardContent></Card>}
     <Button variant="outline" onClick={() => setShowLogs((value) => !value)}><Terminal className="h-4 w-4" />{showLogs ? "Hide Logs" : "Show Logs"}</Button>
     {showLogs && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Terminal className="h-5 w-5" />Logs</CardTitle></CardHeader><CardContent><div ref={logRef} className="h-[460px] overflow-y-auto rounded-md border bg-zinc-950 p-5 font-mono text-sm leading-relaxed text-zinc-100"><pre className="whitespace-pre-wrap">{logs || (active ? t("tasks.logs.preparing") : "No logs available.")}</pre></div></CardContent></Card>}

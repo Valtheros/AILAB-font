@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, CalendarClock, ChevronDown, Clock3, Cpu, Database, Loader2, Plus, Trash2 } from "lucide-react";
+import { BarChart3, CalendarClock, ChevronDown, Clock3, Cpu, Database, Loader2, Plus, Search, Trash2, X } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -21,6 +23,7 @@ import { useLanguage } from "@/components/language-provider";
 
 const API_URL = apiBaseUrl();
 const ACTIVE = new Set(["queued", "running", "started", "stopping", "recovery_pending"]);
+type TaskTypeFilter = "all" | "image_classification" | "segmentation" | "object_detection";
 
 function tone(status: string): StatusTone {
   if (["completed", "exited"].includes(status)) return "success";
@@ -100,6 +103,8 @@ export default function TasksPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [taskTypeFilter, setTaskTypeFilter] = useState<TaskTypeFilter>("all");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -118,11 +123,20 @@ export default function TasksPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const visibleTasks = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    return tasks.filter((task) => {
+      const matchesSearch = !search || [task.displayName, task.modelName, task.modelType, task.datasetName, task.taskType]
+        .some((value) => value?.toLowerCase().includes(search));
+      return matchesSearch && (taskTypeFilter === "all" || task.taskType === taskTypeFilter);
+    });
+  }, [query, taskTypeFilter, tasks]);
+
   const groups = useMemo(() => ({
-    Drafts: tasks.filter((task) => task.status === "draft"),
-    Active: tasks.filter((task) => ACTIVE.has(task.status)),
-    History: tasks.filter((task) => task.status !== "draft" && !ACTIVE.has(task.status)),
-  }), [tasks]);
+    Drafts: visibleTasks.filter((task) => task.status === "draft"),
+    Active: visibleTasks.filter((task) => ACTIVE.has(task.status)),
+    History: visibleTasks.filter((task) => task.status !== "draft" && !ACTIVE.has(task.status)),
+  }), [visibleTasks]);
 
   // Only finished runs carry metrics, so selection is limited to History.
   const comparable = useMemo(
@@ -174,10 +188,42 @@ export default function TasksPage() {
           </Button>
         } />
         {error && <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+        {!loading && tasks.length > 0 && (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t("tasks.filter.search")}
+                aria-label="Search tasks"
+              />
+            </div>
+            <Select value={taskTypeFilter} onValueChange={(value) => setTaskTypeFilter(value as TaskTypeFilter)}>
+              <SelectTrigger className="w-full sm:w-56" aria-label="Filter tasks by task type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All task types</SelectItem>
+                <SelectItem value="image_classification">Image Classification</SelectItem>
+                <SelectItem value="segmentation">Segmentation</SelectItem>
+                <SelectItem value="object_detection">Object Detection</SelectItem>
+              </SelectContent>
+            </Select>
+            {(query || taskTypeFilter !== "all") && (
+              <Button variant="ghost" size="icon" className="self-end sm:self-auto" aria-label="Clear task filters" title="Clear filters" onClick={() => { setQuery(""); setTaskTypeFilter("all"); }}>
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        )}
         {loading ? (
           <EmptyState icon={Loader2} title="Loading tasks" description={t("tasks.loading.description")} />
         ) : tasks.length === 0 ? (
           <EmptyState icon={Clock3} title="No tasks yet" description={t("tasks.empty.description")} />
+        ) : visibleTasks.length === 0 ? (
+          <EmptyState icon={Search} title="No matching tasks" description={t("tasks.filter.empty")} />
         ) : <>
           {Object.entries({ Drafts: groups.Drafts, Active: groups.Active }).map(([label, items]) => items.length > 0 && (
           <section key={label} className="space-y-3">

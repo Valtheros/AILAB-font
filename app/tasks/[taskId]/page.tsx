@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Loader2, TriangleAlert } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/workspace/empty-state";
 import { PageHeader } from "@/components/workspace/page-header";
@@ -18,6 +22,7 @@ const API_URL = apiBaseUrl();
 
 export default function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
+  const router = useRouter();
   const { t } = useLanguage();
   const [task, setTask] = useState<TrainingTask | null>(null);
   const [config, setConfig] = useState<TrainingConfig | null>(null);
@@ -27,9 +32,9 @@ export default function TaskDetailPage() {
     taskId === "new" ? "unsaved" : "saved",
   );
   const [starting, setStarting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const latestConfig = useRef<TrainingConfig | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveChain = useRef<Promise<void>>(Promise.resolve());
   const persistedTaskId = useRef<string | null>(taskId === "new" ? null : taskId);
 
   const load = useCallback(async () => {
@@ -51,6 +56,8 @@ export default function TaskDetailPage() {
         const next = taskConfig(data);
         latestConfig.current = next;
         setConfig(next);
+        setSaveState("saved");
+        setDirty(false);
       }
       setError("");
     } catch (caught) {
@@ -64,11 +71,34 @@ export default function TaskDetailPage() {
   useEffect(() => {
     if (taskId !== "new") persistedTaskId.current = taskId;
   }, [taskId]);
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+  useEffect(() => {
+    if (!dirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const guardInternalLinks = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin || url.href === window.location.href) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPendingHref(`${url.pathname}${url.search}${url.hash}`);
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    document.addEventListener("click", guardInternalLinks, true);
+    return () => {
+      window.removeEventListener("beforeunload", warnBeforeUnload);
+      document.removeEventListener("click", guardInternalLinks, true);
+    };
+  }, [dirty]);
 
-  const save = useCallback((next: TrainingConfig) => {
+  const save = useCallback(async (next: TrainingConfig) => {
     setSaveState("saving");
-    const request = async () => {
+    setError("");
+    try {
       let id = persistedTaskId.current;
       if (!id) {
         const createResponse = await fetch(`${API_URL}/api/tasks`, {
@@ -90,22 +120,20 @@ export default function TaskDetailPage() {
       if (!response.ok) throw new Error(data.detail || "Could not save task");
       setTask(data);
       setSaveState("saved");
+      setDirty(false);
       if (taskId === "new") window.history.replaceState(window.history.state, "", `/tasks/${id}`);
-    };
-    saveChain.current = saveChain.current.catch(() => undefined).then(request).catch((caught) => {
+    } catch (caught) {
       setSaveState("error");
       setError(caught instanceof Error ? caught.message : "Could not save task");
       throw caught;
-    });
-    return saveChain.current;
+    }
   }, [taskId]);
 
-  const changeConfig = (next: TrainingConfig, persist = true) => {
+  const changeConfig = (next: TrainingConfig, markDirty = true) => {
     setConfig(next); latestConfig.current = next; setError("");
-    if (!persist) return;
-    setSaveState("saving");
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { saveTimer.current = null; void save(next).catch(() => undefined); }, 500);
+    if (!markDirty) return;
+    setDirty(true);
+    setSaveState("unsaved");
   };
 
   const train = async () => {
@@ -113,10 +141,8 @@ export default function TaskDetailPage() {
     if (!current) return;
     setStarting(true); setError("");
     try {
-      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-      await save(current);
       const id = persistedTaskId.current;
-      if (!id) throw new Error("Could not create task");
+      if (!id || saveState !== "saved") throw new Error("Save the task before training");
       const response = await fetch(`${API_URL}/api/tasks/${encodeURIComponent(id)}/start`, { method: "POST" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "Could not start training");
@@ -133,7 +159,25 @@ export default function TaskDetailPage() {
     {error && <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
     {loading ? <EmptyState icon={Loader2} title="Loading task" description="Reading the latest task state." />
       : taskId !== "new" && !task ? <EmptyState icon={TriangleAlert} title="Task unavailable" description="This task does not exist or belongs to another user." />
-      : (!task || task.status === "draft") && config ? <TaskConfiguration config={config} onChange={changeConfig} onTrain={train} saveState={saveState} starting={starting} />
+      : (!task || task.status === "draft") && config ? <TaskConfiguration config={config} onChange={changeConfig} onSave={() => save(config)} onTrain={train} saveState={saveState} starting={starting} />
       : task ? <TaskRun task={task} onRefresh={load} /> : null}
-  </div></MainLayout>;
+  </div>
+    <AlertDialog open={Boolean(pendingHref)} onOpenChange={(open) => !open && setPendingHref(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Unsaved task</AlertDialogTitle>
+          <AlertDialogDescription>{t("tasks.unsaved.description")}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Stay</AlertDialogCancel>
+          <AlertDialogAction onClick={() => {
+            const href = pendingHref;
+            setPendingHref(null);
+            setDirty(false);
+            if (href) router.push(href);
+          }}>Leave without saving</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </MainLayout>;
 }
