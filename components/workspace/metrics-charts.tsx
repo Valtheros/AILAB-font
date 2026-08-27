@@ -20,6 +20,7 @@ const strokes = [
   "var(--chart-3)",
   "var(--chart-4)",
   "var(--chart-5)",
+  "var(--chart-6)",
 ];
 
 function numericValue(row: MetricRow | undefined, key: string) {
@@ -28,6 +29,11 @@ function numericValue(row: MetricRow | undefined, key: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
+
+// Substrings that mark a results.csv column as a 0-1 quality metric. Any new
+// metric a trainer writes (F1, IoU, Dice, ...) must be listed here or it is
+// silently dropped from the charts.
+const QUALITY_METRICS = ["accuracy", "map", "precision", "recall", "f1", "iou", "dice"];
 
 export function formatMetricValue(
   key: string,
@@ -39,7 +45,7 @@ export function formatMetricValue(
   const normalized = key.toLowerCase();
   if (
     normalized.includes("loss") ||
-    ["accuracy", "map", "precision", "recall"].some((metric) =>
+    QUALITY_METRICS.some((metric) =>
       normalized.includes(metric),
     )
   ) {
@@ -62,7 +68,7 @@ export function MetricsCharts({ metrics }: { metrics: MetricRow[] }) {
       title: "Quality Metrics",
       description: t("training.chart.qualityDescription"),
       keys: keys.filter((key) =>
-        ["accuracy", "map", "precision", "recall"].some((metric) =>
+        QUALITY_METRICS.some((metric) =>
           key.toLowerCase().includes(metric),
         ),
       ),
@@ -98,7 +104,6 @@ export function MetricsCharts({ metrics }: { metrics: MetricRow[] }) {
                   borderColor: "var(--border)",
                   color: "var(--popover-foreground)",
                 }}
-                itemStyle={{ color: "var(--popover-foreground)" }}
                 labelStyle={{ color: "var(--popover-foreground)" }}
               />
               {group.keys.slice(0, 6).map((key, index) => (
@@ -122,7 +127,12 @@ export function MetricsCharts({ metrics }: { metrics: MetricRow[] }) {
                 className="h-0.5 w-4 shrink-0"
                 style={{ backgroundColor: strokes[index % strokes.length] }}
               />
-              <span className="break-all">{key}</span>
+              <span
+                className="break-all"
+                style={{ color: strokes[index % strokes.length] }}
+              >
+                {key}
+              </span>
             </div>
           ))}
         </div>

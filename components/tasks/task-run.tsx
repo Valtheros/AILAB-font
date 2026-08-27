@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, CircleGauge, Download, Loader2, Square, Terminal, Trophy } from "lucide-react";
+import { Activity, ChartLine, CircleGauge, Download, Loader2, Sparkles, Square, Target, Terminal, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { MetricsCharts, formatMetricValue, type MetricRow } from "@/components/workspace/metrics-charts";
+import { ModelTestDialog } from "@/components/tasks/model-test-dialog";
+import { EvaluationCharts, type EvaluationArtifact } from "@/components/tasks/evaluation-charts";
+import { InsightList, type Insight } from "@/components/tasks/insight-list";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
 import type { TrainingTask } from "@/lib/trainingConfig";
@@ -41,6 +44,10 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const [showLogs, setShowLogs] = useState(!TERMINAL.has(task.status));
   const [stopping, setStopping] = useState(false);
   const [streamError, setStreamError] = useState("");
+  const [testOpen, setTestOpen] = useState(false);
+  const [testEval, setTestEval] = useState<{ test_accuracy?: number; test_loss?: number; test_images?: number; checkpoint?: string; test_map50?: number; test_map50_95?: number; test_precision?: number; test_recall?: number; test_pixel_accuracy?: number; test_mean_iou?: number } | null>(null);
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [evaluation, setEvaluation] = useState<EvaluationArtifact | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setStatus(task.status); }, [task.status]);
@@ -54,8 +61,28 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     if (!task.runSlug) return;
     fetch(`${API_URL}/api/metrics/${encodeURIComponent(task.runSlug)}`)
       .then((response) => response.ok ? response.json() : { metrics: [] })
-      .then((data) => setMetrics(data.metrics ?? []))
-      .catch(() => setMetrics([]));
+      .then((data) => { setMetrics(data.metrics ?? []); setInsights(data.insights ?? []); })
+      .catch(() => { setMetrics([]); setInsights([]); });
+  }, [task.runSlug]);
+  useEffect(() => {
+    if (!task.runSlug) return;
+    setEvaluation(null);
+    fetch(`${API_URL}/api/runs/${encodeURIComponent(task.runSlug)}/files/evaluation_curves.json`)
+      .then((response) => response.ok ? response.json() : null)
+      .then(setEvaluation)
+      .catch(() => setEvaluation(null));
+  }, [task.runSlug, status]);
+
+  // Optional held-out test result, written by the trainer only when the
+  // dataset shipped a test/ split. Fetched via the existing artifact endpoint,
+  // so a run without it simply 404s and no box is shown.
+  useEffect(() => {
+    if (!task.runSlug) return;
+    setTestEval(null);
+    fetch(`${API_URL}/api/runs/${encodeURIComponent(task.runSlug)}/files/test_evaluation.json`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => setTestEval(data))
+      .catch(() => setTestEval(null));
   }, [task.runSlug]);
 
   useEffect(() => {
@@ -79,6 +106,12 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const keys = useMemo(() => latest ? Object.keys(latest).filter((key) => key !== "epoch" && number(latest, key) !== undefined) : [], [latest]);
   const active = !TERMINAL.has(status);
   const files = (task.files ?? []).filter((file) => ["pt", "pth", "csv", "log", "json"].some((extension) => file.name.endsWith(`.${extension}`)));
+  // Model testing supports classification (top-k labels), object detection
+  // (bounding boxes), and segmentation (mask overlay).
+  const canTestModel =
+    status === "completed" &&
+    ["image_classification", "object_detection", "segmentation"].includes(task.taskType) &&
+    Boolean(task.runSlug);
 
   const stop = async () => {
     setStopping(true);
@@ -88,19 +121,133 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     setStopping(false);
   };
 
+  // Plots ultralytics writes into a finished YOLO run. Shown only for the files
+  // that actually exist (older runs, or non-YOLO trainers, simply have none),
+  // resolved from the run's own file listing so no extra request is needed.
+  const yoloPlots = useMemo(() => {
+    if (!TERMINAL.has(status) || !task.runSlug) return [];
+    const wanted: { file: string; labelKey: string }[] = [
+      { file: "results.png", labelKey: "plots.results" },
+      { file: "confusion_matrix.png", labelKey: "plots.confusion" },
+      { file: "confusion_matrix_normalized.png", labelKey: "plots.confusionNormalized" },
+      { file: "BoxPR_curve.png", labelKey: "plots.pr" },
+      { file: "BoxF1_curve.png", labelKey: "plots.f1" },
+      { file: "BoxP_curve.png", labelKey: "plots.precision" },
+      { file: "BoxR_curve.png", labelKey: "plots.recall" },
+    ];
+    const available = new Map((task.files ?? []).map((file) => [file.name, file.path]));
+    return wanted
+      .filter((item) => available.has(item.file))
+      .map((item) => ({ ...item, path: available.get(item.file)! }));
+  }, [task.files, task.runSlug, status]);
+
+  // Held-out test-set result, shaped per task: classification=accuracy,
+  // detection(YOLO)=mAP, semantic=pixel accuracy + mIoU, instance/Faster
+  // R-CNN=test loss. The first matching metric decides how the box reads.
+  const testEvalCard = (() => {
+    const te = testEval;
+    if (!te) return null;
+    const pct = (value: number) => `${(value * 100).toFixed(2)}%`;
+    let title = t("test.eval.title");
+    let cells: { label: string; value: string; highlight?: boolean }[] = [];
+    if (typeof te.test_map50 === "number") {
+      title = t("test.eval.titleDetection");
+      cells = [
+        { label: t("test.eval.map50"), value: pct(te.test_map50), highlight: true },
+        { label: t("test.eval.map"), value: typeof te.test_map50_95 === "number" ? pct(te.test_map50_95) : "-" },
+        { label: t("test.eval.images"), value: String(te.test_images ?? "-") },
+      ];
+    } else if (typeof te.test_pixel_accuracy === "number") {
+      title = t("test.eval.titleDetection");
+      cells = [
+        { label: t("test.eval.pixelAccuracy"), value: pct(te.test_pixel_accuracy), highlight: true },
+        { label: t("test.eval.miou"), value: typeof te.test_mean_iou === "number" ? pct(te.test_mean_iou) : "-" },
+        { label: t("test.eval.images"), value: String(te.test_images ?? "-") },
+      ];
+    } else if (typeof te.test_accuracy === "number") {
+      cells = [
+        { label: t("test.eval.accuracy"), value: pct(te.test_accuracy), highlight: true },
+        { label: t("test.eval.loss"), value: typeof te.test_loss === "number" ? te.test_loss.toFixed(4) : "-" },
+        { label: t("test.eval.images"), value: String(te.test_images ?? "-") },
+      ];
+    } else if (typeof te.test_loss === "number") {
+      title = t("test.eval.titleDetection");
+      cells = [
+        { label: t("test.eval.loss"), value: te.test_loss.toFixed(4), highlight: true },
+        { label: t("test.eval.images"), value: String(te.test_images ?? "-") },
+      ];
+    }
+    if (cells.length === 0) return null;
+    return (
+      <Card className="border-emerald-500/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5" />{title}</CardTitle>
+          <CardDescription>{t("test.eval.description")}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-3">
+          {cells.map((cell) => (
+            <div key={cell.label} className={`rounded-md border p-4 ${cell.highlight ? "bg-emerald-500/10" : ""}`}>
+              <p className="text-xs text-muted-foreground">{cell.label}</p>
+              <p className={`mt-1 font-semibold tabular-nums ${cell.highlight ? "text-3xl" : "text-2xl"}`}>{cell.value}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  })();
+
   return <div className="space-y-4">
     <div className="console-surface flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
       <div className="flex h-11 w-11 items-center justify-center rounded-md border"><Activity className={`h-5 w-5 ${active ? "animate-pulse" : ""}`} /></div>
       <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{task.modelName}</p><StatusBadge tone={tone(status)}>{status}</StatusBadge>{streamError && <StatusBadge tone="warning">{streamError}</StatusBadge>}</div><p className="mt-1 break-words text-sm text-muted-foreground">{task.displayName}{task.datasetName ? ` - ${task.datasetName}` : ""}</p></div>
-      <div className="flex items-center gap-4"><div><p className="text-2xl font-semibold">{Math.round(epoch)}/{task.epochs}</p><p className="text-sm text-muted-foreground">epochs</p></div>{active && <Button variant="destructive" onClick={stop} disabled={stopping}><Square className="h-4 w-4" />{stopping ? "Stopping..." : "Stop Run"}</Button>}</div>
+      <div className="flex flex-wrap items-center gap-4"><div><p className="text-2xl font-semibold">{Math.round(epoch)}/{task.epochs}</p><p className="text-sm text-muted-foreground">epochs</p></div>{canTestModel && <Button onClick={() => setTestOpen(true)}><Sparkles className="h-4 w-4" />Test Model</Button>}{active && <Button variant="destructive" onClick={stop} disabled={stopping}><Square className="h-4 w-4" />{stopping ? "Stopping..." : "Stop Run"}</Button>}</div>
     </div>
     <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
       <Card><CardHeader><div className="flex justify-between"><div><CardTitle>Progress</CardTitle><CardDescription>{progress.toFixed(1)}% complete</CardDescription></div><Badge variant="outline">Epoch {Math.round(epoch)}</Badge></div></CardHeader><CardContent><Progress value={progress} className="h-3" /></CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><CircleGauge className="h-5 w-5" />Latest Metrics</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">{(keys.length ? keys.slice(0, 8) : ["train/loss", "val/loss", "val/accuracy", "lr"]).map((key) => <div key={key} className="rounded-md border p-3"><p className="break-words text-xs text-muted-foreground">{key}</p><p className="mt-2 text-xl font-semibold">{formatMetricValue(key, latest?.[key])}</p></div>)}</CardContent></Card>
     </div>
-    {metrics.length > 0 && <MetricsCharts metrics={metrics} />}
+    {testEvalCard}
+    {insights.length > 0 && <InsightList insights={insights} titleKey="insight.section.title" />}
+    {metrics.length > 0 && !evaluation && <MetricsCharts metrics={metrics} />}
+    {evaluation && <EvaluationCharts artifact={evaluation} metrics={metrics} />}
+    {yoloPlots.length > 0 && (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><ChartLine className="h-5 w-5" />{t("plots.title")}</CardTitle>
+          <CardDescription>{t("plots.description")}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          {yoloPlots.map((plot) => (
+            <a
+              key={plot.file}
+              href={artifactDownloadUrl(API_URL, task.runSlug!, plot.path)}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md border p-2 transition-colors hover:bg-accent"
+            >
+              <p className="mb-2 px-1 text-sm font-medium">{t(plot.labelKey)}</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={artifactDownloadUrl(API_URL, task.runSlug!, plot.path)}
+                alt={t(plot.labelKey)}
+                loading="lazy"
+                className="w-full rounded bg-white"
+              />
+            </a>
+          ))}
+        </CardContent>
+      </Card>
+    )}
     {TERMINAL.has(status) && files.length > 0 && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Trophy className="h-5 w-5" />Artifacts</CardTitle><CardDescription>{t("tasks.artifacts.description")}</CardDescription></CardHeader><CardContent className="grid gap-2 md:grid-cols-2">{files.map((file) => <a key={file.path} href={artifactDownloadUrl(API_URL, task.runSlug!, file.path)} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent"><span className="min-w-0 break-all text-sm font-medium">{file.name}</span><span className="ml-3 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">{bytes(file.size)}<Download className="h-4 w-4" /></span></a>)}</CardContent></Card>}
     <Button variant="outline" onClick={() => setShowLogs((value) => !value)}><Terminal className="h-4 w-4" />{showLogs ? "Hide Logs" : "Show Logs"}</Button>
     {showLogs && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Terminal className="h-5 w-5" />Logs</CardTitle></CardHeader><CardContent><div ref={logRef} className="h-[460px] overflow-y-auto rounded-md border bg-zinc-950 p-5 font-mono text-sm leading-relaxed text-zinc-100"><pre className="whitespace-pre-wrap">{logs || (active ? t("tasks.logs.preparing") : "No logs available.")}</pre></div></CardContent></Card>}
+    {canTestModel && task.runSlug && (
+      <ModelTestDialog
+        open={testOpen}
+        onOpenChange={setTestOpen}
+        runSlug={task.runSlug}
+        modelName={task.modelName}
+      />
+    )}
   </div>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Boxes, CheckCircle, Cpu, Database, Loader2, Play, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Activity, Boxes, CheckCircle, Cpu, Database, Loader2, Play, Save, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,11 +12,18 @@ import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { useLanguage } from "@/components/language-provider";
 import { apiBaseUrl } from "@/lib/api";
-import { CVCatalog, ModelSpec, ParamSpec, catalogPlaceholder, defaultParamsFor, getModel, getTask } from "@/lib/cvCatalog";
+import { CVCatalog, ModelSpec, ParamSpec, catalogPlaceholder, modelDefaults, getModel, getTask } from "@/lib/cvCatalog";
 import { memorySafetyForModel, safeDefaultEntries } from "@/lib/resourceSafety";
 import { ConfigValue, TrainingConfig } from "@/lib/trainingConfig";
 
 const API_URL = apiBaseUrl();
+
+interface ResourcePlanPreview {
+  estimatedVramMb: number;
+  safeLimitMb: number;
+  isWithinLimit: boolean;
+  device?: string;
+}
 
 interface Dataset {
   id: string; name: string; images: number; size: string; formats: string[]; tasks: string[];
@@ -63,9 +70,10 @@ function ParamInput({ spec, value, onChange }: { spec: ParamSpec; value: ConfigV
   );
 }
 
-export function TaskConfiguration({ config, onChange, onTrain, saveState, starting }: {
+export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState, starting }: {
   config: TrainingConfig;
   onChange: (next: TrainingConfig, persist?: boolean) => void;
+  onSave: () => Promise<void>;
   onTrain: () => void;
   saveState: "unsaved" | "saved" | "saving" | "error";
   starting: boolean;
@@ -93,7 +101,8 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
   useEffect(() => {
     if (catalogStatus !== "ready") return;
     if (config.taskType !== selectedTask.id || config.modelType !== selectedModel.id) {
-      onChange({ ...config, taskType: selectedTask.id, modelType: selectedModel.id, modelName: selectedModel.model_name, datasetName: "", params: defaultParamsFor(selectedModel, catalog.common_params) }, false);
+      const defaults = modelDefaults(selectedModel, catalog.common_params);
+      onChange({ ...config, taskType: selectedTask.id, modelType: selectedModel.id, modelName: selectedModel.model_name, datasetName: "", params: defaults.params, batchSize: defaults.batchSize, workers: defaults.workers, amp: defaults.amp }, false);
     }
   }, [catalogStatus, selectedModel, selectedTask.id]);
 
@@ -111,11 +120,42 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
   const datasetsForModel = useMemo(() => datasets.filter((dataset) => compatible(dataset, selectedModel, selectedTask.id)), [datasets, selectedModel, selectedTask.id]);
   const memory = useMemo(() => memorySafetyForModel(selectedModel, config), [config, selectedModel]);
 
+  // Backend estimate from resource_guard.py. The badges above are the client
+  // heuristic; this line shows the numbers the server actually decides with.
+  const [vram, setVram] = useState<ResourcePlanPreview | null>(null);
+  useEffect(() => {
+    if (catalogStatus !== "ready") return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`${API_URL}/api/resource-plan/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model_type: config.modelType,
+          batch_size: config.batchSize,
+          params: { ...config.params, device: config.device },
+        }),
+        signal: controller.signal,
+      })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => setVram(data))
+        .catch(() => undefined);
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [catalogStatus, config.modelType, config.batchSize, config.device, config.params]);
+
   const chooseTask = (taskId: string) => {
     const task = getTask(catalog, taskId); const model = task.models[0];
-    onChange({ ...config, taskType: task.id, modelType: model.id, modelName: model.model_name, datasetName: "", params: defaultParamsFor(model, catalog.common_params) });
+    const defaults = modelDefaults(model, catalog.common_params);
+    onChange({ ...config, taskType: task.id, modelType: model.id, modelName: model.model_name, datasetName: "", params: defaults.params, batchSize: defaults.batchSize, workers: defaults.workers, amp: defaults.amp });
   };
-  const chooseModel = (model: ModelSpec) => onChange({ ...config, modelType: model.id, modelName: model.model_name, datasetName: "", params: { ...defaultParamsFor(model, catalog.common_params), device: config.device } });
+  const chooseModel = (model: ModelSpec) => {
+    const defaults = modelDefaults(model, catalog.common_params);
+    onChange({ ...config, modelType: model.id, modelName: model.model_name, datasetName: "", params: { ...defaults.params, device: config.device }, batchSize: defaults.batchSize, workers: defaults.workers, amp: defaults.amp });
+  };
   const commonValue = (spec: ParamSpec) => ({ epochs: config.epochs, batch_size: config.batchSize, device: config.device, workers: config.workers, amp: config.amp, seed: config.seed } as Record<string, ConfigValue>)[spec.key] ?? config.params[spec.key] ?? spec.default;
   const updateCommon = (spec: ParamSpec, value: ConfigValue) => {
     const next = { ...config, params: { ...config.params, [spec.key]: value } };
@@ -136,7 +176,7 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
   );
 
   return <div className="mx-auto max-w-5xl space-y-4">
-    <div className="flex justify-end"><StatusBadge tone={saveState === "error" ? "warning" : "neutral"}>{saveState === "unsaved" ? "Not saved yet" : saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : "Saved automatically"}</StatusBadge></div>
+    <div className="flex justify-end"><StatusBadge tone={saveState === "error" ? "warning" : "neutral"}>{saveState === "unsaved" ? "Unsaved" : saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : "Saved"}</StatusBadge></div>
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" />Task</CardTitle><CardDescription>{t("config.task.description")}</CardDescription></CardHeader>
       <CardContent className="grid gap-2 md:grid-cols-3">{catalog.tasks.map((task) => { const Icon = taskIcons[task.id] ?? Activity; const active = task.id === selectedTask.id; return <button key={task.id} onClick={() => chooseTask(task.id)} className={`rounded-md border p-4 text-left ${active ? "border-foreground bg-foreground text-background" : "hover:bg-accent"}`}><Icon className="mb-3 h-5 w-5" /><p className="font-medium">{task.label}</p><p className={`text-xs ${active ? "text-background/70" : "text-muted-foreground"}`}>{task.models.length} models</p></button>; })}</CardContent>
     </Card>
@@ -153,8 +193,24 @@ export function TaskConfiguration({ config, onChange, onTrain, saveState, starti
       <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{selectedModel.params.map((spec) => <ParamInput key={spec.key} spec={spec} value={config.params[spec.key] ?? spec.default} onChange={(value) => updateParam(spec.key, value)} />)}</CardContent>
     </Card>
     <Card><CardHeader><div className="flex flex-wrap justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Memory Safety</CardTitle><CardDescription>{t("Helps prevent memory errors before training starts.")}</CardDescription></div><StatusBadge tone={memory.ok ? "success" : "warning"}>{memory.label}</StatusBadge></div></CardHeader>
-      <CardContent className="space-y-4"><div className="flex flex-wrap gap-2">{memory.summary.map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}</div>{!memory.ok && <div className="rounded-md border border-amber-400/40 bg-amber-500/10 p-3 text-sm"><ul className="list-disc space-y-1 pl-5">{[...memory.issues, ...memory.suggestions].map((item) => <li key={item}>{t(item)}</li>)}</ul></div>}<Button variant="outline" onClick={() => { const next = { ...config, params: { ...config.params } }; for (const [key, value] of safeDefaultEntries(selectedModel)) { next.params[key] = value; if (key === "batch_size") next.batchSize = Number(value); if (key === "workers") next.workers = Number(value); if (key === "amp") next.amp = Boolean(value); } onChange(next); }}>Apply safe settings</Button></CardContent>
+      <CardContent className="space-y-4"><div className="flex flex-wrap gap-2">{memory.summary.map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}</div>
+        {vram && (
+          <div className={`flex items-start gap-2 rounded-md border p-3 text-sm ${vram.isWithinLimit ? "border-emerald-500/40 bg-emerald-500/10" : "border-amber-500/40 bg-amber-500/10"}`}>
+            <span aria-hidden="true">{vram.isWithinLimit ? "✅" : "⚠️"}</span>
+            <p className="min-w-0">
+              {t("config.vram.estimate")
+                .replace("{estimated}", vram.estimatedVramMb.toLocaleString())
+                .replace("{limit}", vram.safeLimitMb.toLocaleString())}
+              {!vram.isWithinLimit && <span className="ml-1 font-medium">{t("config.vram.over")}</span>}
+            </p>
+          </div>
+        )}{!memory.ok && <div className="rounded-md border border-amber-400/40 bg-amber-500/10 p-3 text-sm"><ul className="list-disc space-y-1 pl-5">{[...memory.issues, ...memory.suggestions].map((item) => <li key={item}>{t(item)}</li>)}</ul></div>}<Button variant="outline" onClick={() => { const next = { ...config, params: { ...config.params } }; for (const [key, value] of safeDefaultEntries(selectedModel)) { next.params[key] = value; if (key === "batch_size") next.batchSize = Number(value); if (key === "workers") next.workers = Number(value); if (key === "amp") next.amp = Boolean(value); } onChange(next); }}>Apply safe settings</Button></CardContent>
     </Card>
-    <div className="flex justify-end pb-8"><Button size="lg" onClick={onTrain} disabled={starting || saveState !== "saved" || !config.datasetName || !memory.ok}>{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}Train</Button></div>
+    <div className="flex flex-col justify-end gap-2 pb-8 sm:flex-row">
+      <Button variant="outline" size="lg" onClick={() => void onSave().catch(() => undefined)} disabled={saveState === "saving" || saveState === "saved"}>
+        {saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save draft
+      </Button>
+      <Button size="lg" onClick={onTrain} disabled={starting || saveState !== "saved" || !config.datasetName || !memory.ok}>{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}Train</Button>
+    </div>
   </div>;
 }
