@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { MetricsCharts, formatMetricValue, type MetricRow } from "@/components/workspace/metrics-charts";
 import { ModelTestDialog } from "@/components/tasks/model-test-dialog";
-import { EvaluationCharts, type EvaluationArtifact } from "@/components/tasks/evaluation-charts";
 import { InsightList, type Insight } from "@/components/tasks/insight-list";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
@@ -47,7 +46,6 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const [testOpen, setTestOpen] = useState(false);
   const [testEval, setTestEval] = useState<{ test_accuracy?: number; test_loss?: number; test_images?: number; checkpoint?: string; test_map50?: number; test_map50_95?: number; test_precision?: number; test_recall?: number; test_pixel_accuracy?: number; test_mean_iou?: number } | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
-  const [evaluation, setEvaluation] = useState<EvaluationArtifact | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setStatus(task.status); }, [task.status]);
@@ -64,14 +62,6 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
       .then((data) => { setMetrics(data.metrics ?? []); setInsights(data.insights ?? []); })
       .catch(() => { setMetrics([]); setInsights([]); });
   }, [task.runSlug]);
-  useEffect(() => {
-    if (!task.runSlug) return;
-    setEvaluation(null);
-    fetch(`${API_URL}/api/runs/${encodeURIComponent(task.runSlug)}/files/evaluation_curves.json`)
-      .then((response) => response.ok ? response.json() : null)
-      .then(setEvaluation)
-      .catch(() => setEvaluation(null));
-  }, [task.runSlug, status]);
 
   // Optional held-out test result, written by the trainer only when the
   // dataset shipped a test/ split. Fetched via the existing artifact endpoint,
@@ -208,8 +198,7 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     </div>
     {testEvalCard}
     {insights.length > 0 && <InsightList insights={insights} titleKey="insight.section.title" />}
-    {metrics.length > 0 && !evaluation && <MetricsCharts metrics={metrics} />}
-    {evaluation && <EvaluationCharts artifact={evaluation} metrics={metrics} />}
+    {metrics.length > 0 && <MetricsCharts metrics={metrics} />}
     {yoloPlots.length > 0 && (
       <Card>
         <CardHeader>

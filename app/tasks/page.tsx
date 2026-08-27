@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, CalendarClock, ChevronDown, Clock3, Cpu, Database, Loader2, Plus, Search, Trash2, X } from "lucide-react";
+import { BarChart3, CalendarClock, Clock3, Cpu, Database, Loader2, Plus, Search, Trash2, X } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +12,6 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CompareRunsDialog } from "@/components/tasks/compare-runs-dialog";
 import { EmptyState } from "@/components/workspace/empty-state";
 import { PageHeader } from "@/components/workspace/page-header";
@@ -32,12 +31,12 @@ function tone(status: string): StatusTone {
   return "neutral";
 }
 
-function TaskCard({ task, onDelete, compact = false, selectable = false, selected = false, onToggleSelect }: { task: TrainingTask; onDelete: () => void; compact?: boolean; selectable?: boolean; selected?: boolean; onToggleSelect?: () => void }) {
+function TaskCard({ task, onDelete, selectable = false, selected = false, onToggleSelect }: { task: TrainingTask; onDelete: () => void; selectable?: boolean; selected?: boolean; onToggleSelect?: () => void }) {
   const router = useRouter();
   const updated = task.updatedAt ? new Date(task.updatedAt).toLocaleString() : "-";
   return (
     <Card className={`min-w-0 cursor-pointer overflow-hidden transition-colors hover:border-foreground/40 hover:bg-accent/30 ${selected ? "border-foreground ring-1 ring-foreground" : ""}`} onClick={() => router.push(`/tasks/${task.id}`)}>
-      <CardHeader className={compact ? "gap-2 p-4" : "gap-4"}>
+      <CardHeader className="gap-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             {selectable && (
@@ -61,8 +60,8 @@ function TaskCard({ task, onDelete, compact = false, selectable = false, selecte
           <StatusBadge className="shrink-0" tone={tone(task.status)}>{task.status}</StatusBadge>
         </div>
       </CardHeader>
-      <CardContent className={compact ? "space-y-3 p-4 pt-0" : "space-y-4"}>
-        <div className={`grid ${compact ? "grid-cols-2 gap-2" : "gap-3 sm:grid-cols-2"}`}>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="min-w-0 rounded-md border bg-background/70 p-3">
             <div className="flex items-center gap-2 text-xs text-muted-foreground"><Cpu className="h-3.5 w-3.5" />Model</div>
             <p className="mt-1 break-all text-sm font-semibold">{task.modelName || task.modelType}</p>
@@ -100,7 +99,6 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deleteTask, setDeleteTask] = useState<TrainingTask | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -235,10 +233,7 @@ export default function TasksPage() {
           ))}
           {groups.History.length > 0 && (
             <section className="space-y-3">
-              <div className="flex items-center gap-1">
-                <h2 className="text-lg font-semibold">History ({groups.History.length})</h2>
-                {groups.History.length > 3 && <Button className="h-8 w-8" variant="ghost" size="icon" aria-label="View all history" title="View all history" onClick={() => setShowHistory(true)}><ChevronDown className="h-5 w-5" /></Button>}
-              </div>
+              <h2 className="text-lg font-semibold">History ({groups.History.length})</h2>
               {comparable.length >= 2 && (
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-accent/30 p-3">
                   <div className="min-w-0 text-sm">
@@ -263,7 +258,7 @@ export default function TasksPage() {
                 </div>
               )}
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {groups.History.slice(0, 3).map((task) => (
+                {groups.History.map((task) => (
                   <TaskCard
                     key={task.id}
                     task={task}
@@ -278,27 +273,6 @@ export default function TasksPage() {
           )}
         </>}
       </div>
-      <Dialog open={showHistory} onOpenChange={setShowHistory}>
-        <DialogContent className="bottom-0 left-0 right-0 top-auto flex max-h-[92dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col rounded-b-none p-4 sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:w-[calc(100%-2rem)] sm:max-w-5xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-6">
-          <DialogHeader className="shrink-0 text-left">
-            <DialogTitle>Task History</DialogTitle>
-            <DialogDescription>{groups.History.length} completed or failed tasks</DialogDescription>
-          </DialogHeader>
-          <div className="grid min-h-0 min-w-0 flex-1 auto-rows-max content-start gap-3 overflow-x-hidden overflow-y-auto pr-1 md:grid-cols-2">
-            {groups.History.map((task) => (
-              <TaskCard
-                compact
-                key={task.id}
-                task={task}
-                onDelete={() => { setShowHistory(false); setDeleteTask(task); }}
-                selectable={comparable.some((item) => item.id === task.id)}
-                selected={selectedIds.includes(task.id)}
-                onToggleSelect={() => toggleSelect(task)}
-              />
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
       {canCompare && (
         <CompareRunsDialog
           open={compareOpen}
