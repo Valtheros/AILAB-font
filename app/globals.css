@@ -1,3 +1,4 @@
+@import "@annotorious/react/annotorious-react.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -159,5 +160,23 @@
         transparent 1px
       );
     background-size: 32px 32px;
+  }
+}
+
+.annotation-image-shell {
+  max-width: 100%;
+}
+
+.annotation-image-shell .a9s-annotationlayer {
+  color: var(--foreground);
+}
+
+.annotation-image-shell svg {
+  touch-action: none;
+}
+
+@media (max-width: 640px) {
+  .annotation-image-shell {
+    width: 100%;
   }
 }

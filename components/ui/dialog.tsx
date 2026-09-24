@@ -78,3 +78,5 @@ export {
   DialogPortal,
   DialogTitle,
 };
+
+export const DialogTrigger = DialogPrimitive.Trigger;

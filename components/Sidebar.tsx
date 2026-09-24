@@ -7,6 +7,7 @@ import {
   Database,
   ListTodo,
   Menu,
+  ScanSearch,
   UserRound,
   ShieldCheck,
   X,
@@ -26,6 +27,11 @@ const navItems = [
     title: "Dataset",
     href: "/dataset",
     icon: Database,
+  },
+  {
+    title: "Annotate",
+    href: "/annotate",
+    icon: ScanSearch,
   },
   {
     title: "Tasks",

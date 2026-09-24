@@ -14,6 +14,7 @@ import {
   Folder,
   Image as ImageIcon,
   Layers3,
+  PenTool,
   Settings2,
   SlidersHorizontal,
   Upload,
@@ -79,24 +80,19 @@ const workflowStages = [
     icon: BookOpenCheck,
   },
   {
-    title: "Prepare labels",
-    description: "Export a ZIP from a supported annotation tool or arrange files in the shown layout.",
-    icon: FileArchive,
+    title: "Create labels",
+    description: "Create an AILAB Label project, upload images, and label them in the browser.",
+    icon: PenTool,
   },
   {
-    title: "Inspect and import",
-    description: "Upload the ZIP, review detected formats and ready models, then import it.",
-    icon: Upload,
+    title: "Publish dataset",
+    description: "Publish the finished project. AILAB creates the correct training layout and class mapping.",
+    icon: BadgeCheck,
   },
   {
-    title: "Configure model",
-    description: "Open Configuration, pick a compatible dataset, set the model options, and review the run.",
+    title: "Configure and train",
+    description: "Open Tasks, choose a compatible model and dataset, then monitor training and results.",
     icon: SlidersHorizontal,
-  },
-  {
-    title: "Train and export",
-    description: "Start training, watch logs and metrics, then download artifacts from Results.",
-    icon: Download,
   },
 ];
 
@@ -104,22 +100,22 @@ const decisionRows = [
   {
     need: "One label for the whole image",
     model: "ResNet or EfficientNet",
-    dataset: "ImageFolder",
+    dataset: "AILAB Label classification",
   },
   {
     need: "Find object positions with boxes",
     model: "YOLOv11 or Faster R-CNN",
-    dataset: "YOLO detection or COCO boxes",
+    dataset: "AILAB Label boxes",
   },
   {
     need: "Classify every pixel",
     model: "DeepLabV3+",
-    dataset: "Image and semantic mask pairs",
+    dataset: "AILAB Label semantic masks",
   },
   {
     need: "Separate object masks per instance",
     model: "Mask R-CNN",
-    dataset: "COCO instance masks",
+    dataset: "AILAB Label instance masks",
   },
 ];
 
@@ -128,11 +124,11 @@ const modelGuides: ModelGuide[] = [
     title: "ResNet / EfficientNet",
     task: "Image classification",
     format: "imagefolder",
-    accepted: ["ImageFolder"],
+    accepted: ["AILAB Label", "ImageFolder upload"],
     icon: Boxes,
     useWhen: "Use when each image has exactly one final class, such as pass/fail, product type, or disease category.",
     prepare: [
-      "Create one folder per class under train/.",
+      "Create an Image Classification project in AILAB Label, or upload ImageFolder.",
       "Put validation images under val/ with the same class folder names when available.",
       "Do not mix detection labels or masks inside the class folders.",
     ],
@@ -154,12 +150,12 @@ const modelGuides: ModelGuide[] = [
     title: "YOLOv11",
     task: "Object detection",
     format: "yolo_detection",
-    accepted: ["YOLO detection", "COCO boxes exported at train time"],
+    accepted: ["AILAB Label boxes", "YOLO or COCO upload"],
     icon: Crosshair,
     useWhen: "Use when the goal is fast bounding-box detection for one or more objects in each image.",
     prepare: [
-      "Use YOLO labels with data.yaml, images/train, and labels/train.",
-      "COCO box datasets can also be uploaded; AILAB creates YOLO files under .ailab_exports when YOLO training starts.",
+      "Create boxes in AILAB Label; the published COCO dataset is converted to YOLO at train time.",
+      "For external data, upload standard YOLO detection or COCO boxes.",
       "Each label row must be class_id x_center y_center width height with normalized values.",
     ],
     importResult: [
@@ -172,7 +168,7 @@ const modelGuides: ModelGuide[] = [
       "Use 640 image size unless small objects need more detail.",
     ],
     avoid: [
-      "Do not upload YOLO polygon segmentation and expect detection unless boxes dominate.",
+      "YOLO polygon segmentation is not supported by external upload.",
       "Do not use this when each object needs a separate mask.",
     ],
   },
@@ -180,11 +176,11 @@ const modelGuides: ModelGuide[] = [
     title: "Faster R-CNN",
     task: "Object detection",
     format: "yolo_detection or coco_instances",
-    accepted: ["YOLO detection", "COCO boxes"],
+    accepted: ["AILAB Label boxes", "YOLO or COCO upload"],
     icon: Crosshair,
     useWhen: "Use when a two-stage detector baseline is preferred over YOLO speed.",
     prepare: [
-      "Upload YOLO detection or COCO box annotations.",
+      "Create boxes in AILAB Label, or upload YOLO detection or COCO box annotations.",
       "COCO files must reference image filenames that exist inside the ZIP.",
       "Box-only COCO is valid for Faster R-CNN.",
     ],
@@ -206,20 +202,20 @@ const modelGuides: ModelGuide[] = [
     title: "DeepLabV3+",
     task: "Semantic segmentation",
     format: "semantic_masks",
-    accepted: ["Image and mask pairs"],
+    accepted: ["AILAB Label semantic masks", "Indexed PNG mask upload"],
     icon: Layers3,
     useWhen: "Use when every pixel needs one class, such as road/background/object area.",
     prepare: [
-      "Create train/images and train/masks folders.",
+      "Create a Semantic Segmentation project in AILAB Label, or upload train/images and train/masks.",
       "Each image must have a mask with the same base filename.",
       "Mask pixel values must match the class IDs used for training.",
     ],
     importResult: [
       "Ready models should include DeepLabV3+ only.",
-      "Import will fail if masks are missing for images.",
+      "Training validates each image and mask pair when the dataset is read.",
     ],
     configure: [
-      "Set Mask classes to the number of pixel classes.",
+      "AILAB Label datasets set Mask classes automatically, including background.",
       "Use ignore value 255 only if masks contain unlabeled pixels.",
       "Start with resnet34 encoder and ImageNet weights.",
     ],
@@ -232,11 +228,11 @@ const modelGuides: ModelGuide[] = [
     title: "Mask R-CNN",
     task: "Instance segmentation",
     format: "coco_instances",
-    accepted: ["COCO instance masks"],
+    accepted: ["AILAB Label instances", "COCO instance upload"],
     icon: BadgeCheck,
     useWhen: "Use when each object needs both a box and its own instance mask.",
     prepare: [
-      "Export COCO JSON with segmentation polygons or RLE masks.",
+      "Create separate objects in AILAB Label, or upload COCO polygons or RLE masks.",
       "Include images referenced by the COCO file inside the ZIP.",
       "Make sure annotations contain real masks, not only bounding boxes.",
     ],
@@ -256,24 +252,65 @@ const modelGuides: ModelGuide[] = [
   },
 ];
 
-const datasetLayouts = [
+const ailabLayouts = [
   {
-    title: "ImageFolder classification",
+    title: "AILAB Label classification",
     format: "imagefolder",
     rows: [
-      { label: "dataset.zip", kind: "folder", depth: 0 },
+      { label: "published-dataset", kind: "folder", depth: 0 },
       { label: "train", kind: "folder", depth: 1 },
-      { label: "cat", kind: "folder", depth: 2 },
-      { label: "cat_001.jpg", kind: "image", depth: 3 },
-      { label: "dog", kind: "folder", depth: 2 },
-      { label: "dog_001.jpg", kind: "image", depth: 3 },
+      { label: "0000_cat", kind: "folder", depth: 2 },
+      { label: "image-id.jpg", kind: "image", depth: 3 },
+      { label: "0001_dog", kind: "folder", depth: 2 },
+      { label: "image-id.jpg", kind: "image", depth: 3 },
       { label: "val", kind: "folder", depth: 1 },
-      { label: "cat", kind: "folder", depth: 2 },
-      { label: "cat_101.jpg", kind: "image", depth: 3 },
+      { label: "0000_cat/image-id.jpg", kind: "image", depth: 2 },
     ] satisfies TreeRow[],
   },
   {
-    title: "YOLO detection",
+    title: "AILAB Label object detection",
+    format: "coco_boxes",
+    rows: [
+      { label: "published-dataset", kind: "folder", depth: 0 },
+      { label: "train", kind: "folder", depth: 1 },
+      { label: "images/image-id.jpg", kind: "image", depth: 2 },
+      { label: "_annotations.coco.json", kind: "file", depth: 2 },
+      { label: "val", kind: "folder", depth: 1 },
+      { label: "images/image-id.jpg", kind: "image", depth: 2 },
+      { label: "_annotations.coco.json", kind: "file", depth: 2 },
+    ] satisfies TreeRow[],
+  },
+  {
+    title: "AILAB Label semantic segmentation",
+    format: "semantic_masks",
+    rows: [
+      { label: "published-dataset", kind: "folder", depth: 0 },
+      { label: "train", kind: "folder", depth: 1 },
+      { label: "images/image-id.jpg", kind: "image", depth: 2 },
+      { label: "masks/image-id.png", kind: "image", depth: 2 },
+      { label: "val", kind: "folder", depth: 1 },
+      { label: "images/image-id.jpg", kind: "image", depth: 2 },
+      { label: "masks/image-id.png", kind: "image", depth: 2 },
+    ] satisfies TreeRow[],
+  },
+  {
+    title: "AILAB Label instance segmentation",
+    format: "coco_instances",
+    rows: [
+      { label: "published-dataset", kind: "folder", depth: 0 },
+      { label: "train", kind: "folder", depth: 1 },
+      { label: "images/image-id.jpg", kind: "image", depth: 2 },
+      { label: "_annotations.coco.json", kind: "file", depth: 2 },
+      { label: "val", kind: "folder", depth: 1 },
+      { label: "images/image-id.jpg", kind: "image", depth: 2 },
+      { label: "_annotations.coco.json", kind: "file", depth: 2 },
+    ] satisfies TreeRow[],
+  },
+];
+
+const externalLayouts = [
+  {
+    title: "External YOLO detection",
     format: "yolo_detection",
     rows: [
       { label: "dataset.zip", kind: "folder", depth: 0 },
@@ -284,31 +321,6 @@ const datasetLayouts = [
       { label: "labels", kind: "folder", depth: 1 },
       { label: "train/image_001.txt", kind: "file", depth: 2 },
       { label: "val/image_101.txt", kind: "file", depth: 2 },
-    ] satisfies TreeRow[],
-  },
-  {
-    title: "COCO boxes or instances",
-    format: "coco_instances",
-    rows: [
-      { label: "dataset.zip", kind: "folder", depth: 0 },
-      { label: "train", kind: "folder", depth: 1 },
-      { label: "image_001.jpg", kind: "image", depth: 2 },
-      { label: "_annotations.coco.json", kind: "file", depth: 2 },
-      { label: "val", kind: "folder", depth: 1 },
-      { label: "_annotations.coco.json", kind: "file", depth: 2 },
-    ] satisfies TreeRow[],
-  },
-  {
-    title: "Semantic masks",
-    format: "semantic_masks",
-    rows: [
-      { label: "dataset.zip", kind: "folder", depth: 0 },
-      { label: "train", kind: "folder", depth: 1 },
-      { label: "images/image_001.jpg", kind: "image", depth: 2 },
-      { label: "masks/image_001.png", kind: "image", depth: 2 },
-      { label: "val", kind: "folder", depth: 1 },
-      { label: "images/image_101.jpg", kind: "image", depth: 2 },
-      { label: "masks/image_101.png", kind: "image", depth: 2 },
     ] satisfies TreeRow[],
   },
 ];
@@ -433,8 +445,8 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
                 </Link>
               </Button>
               <Button asChild>
-                <Link href="/tasks">
-                  Open tasks
+                <Link href="/annotate">
+                  Open AILAB Label
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
@@ -454,7 +466,7 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-3 md:grid-cols-5">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {workflowStages.map(({ description, icon: Icon, title }, index) => (
                   <div
                     key={title}
@@ -480,17 +492,17 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Import Check</CardTitle>
+                <CardTitle>Dataset Ready Check</CardTitle>
               <CardDescription>
                 <I18nText textKey="guide.import.description" />
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {[
-                "The ZIP inspection finishes without errors.",
+                "Publish from AILAB Label, or inspect one of the supported external ZIP layouts.",
                 "Ready models include the model you plan to train.",
                 "Class names and annotation counts look correct.",
-                "Warnings are understood before pressing Import dataset.",
+                "External upload warnings are understood before pressing Import dataset.",
               ].map((item) => (
                 <div className="flex items-start gap-3" key={item}>
                   <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
@@ -552,18 +564,30 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileArchive className="h-5 w-5" />
-                  ZIP Layouts
+                  AILAB Label Outputs
                 </CardTitle>
                 <CardDescription>
-                  <I18nText textKey="guide.layouts.description" />
+                  <I18nText textKey="guide.layouts.ailabDescription" />
                 </CardDescription>
               </CardHeader>
             </Card>
             <div className="grid gap-4 lg:grid-cols-2">
-              {datasetLayouts.map((layout) => (
+              {ailabLayouts.map((layout) => (
                 <DatasetDiagram key={layout.title} {...layout} />
               ))}
             </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>External Upload</CardTitle>
+                <CardDescription><I18nText textKey="guide.layouts.externalDescription" /></CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 lg:grid-cols-2">
+                {externalLayouts.map((layout) => <DatasetDiagram key={layout.title} {...layout} />)}
+                <div className="rounded-lg border border-dashed p-4 text-sm leading-6 text-muted-foreground">
+                  <I18nText textKey="guide.layouts.externalBasic" />
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
         </Tabs>
