@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/workspace/page-header";
 import { TaskConfiguration } from "@/components/tasks/task-configuration";
 import { TaskRun } from "@/components/tasks/task-run";
 import { apiBaseUrl } from "@/lib/api";
+import { computeMessage } from "@/lib/compute";
 import { defaultConfig, taskConfig, taskDraftPayload, type TrainingConfig, type TrainingTask } from "@/lib/trainingConfig";
 import { useLanguage } from "@/components/language-provider";
 
@@ -23,7 +24,7 @@ const API_URL = apiBaseUrl();
 export default function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [task, setTask] = useState<TrainingTask | null>(null);
   const [config, setConfig] = useState<TrainingConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,38 +37,55 @@ export default function TaskDetailPage() {
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const latestConfig = useRef<TrainingConfig | null>(null);
   const persistedTaskId = useRef<string | null>(taskId === "new" ? null : taskId);
+  const loadController = useRef<AbortController | null>(null);
+  const saveController = useRef<AbortController | null>(null);
+  const savedPayload = useRef<string | null>(null);
 
   const load = useCallback(async () => {
-    const id = persistedTaskId.current ?? taskId;
+    loadController.current?.abort();
+    const controller = new AbortController();
+    loadController.current = controller;
+    setLoading(true);
+    const id = taskId === 'new' ? persistedTaskId.current ?? taskId : taskId;
     if (id === "new") {
       const next = { ...defaultConfig, params: { ...defaultConfig.params } };
       latestConfig.current = next;
+      savedPayload.current = null;
       setConfig(next);
       setTask(null);
       setLoading(false);
       return;
     }
     try {
-      const response = await fetch(`${API_URL}/api/tasks/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const response = await fetch(`${API_URL}/api/tasks/${encodeURIComponent(id)}`, { cache: "no-store", signal: controller.signal });
       const data = await response.json().catch(() => ({}));
+      if (controller.signal.aborted) return;
       if (!response.ok) throw new Error(data.detail || "Task not found");
       setTask(data);
       if (data.status === "draft") {
         const next = taskConfig(data);
         latestConfig.current = next;
+        savedPayload.current = JSON.stringify(taskDraftPayload(next));
         setConfig(next);
         setSaveState("saved");
         setDirty(false);
       }
       setError("");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load task");
+      if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "Could not load task");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [taskId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => {
+      loadController.current?.abort();
+      saveController.current?.abort();
+      saveController.current = null;
+    };
+  }, [load]);
   useEffect(() => {
     if (taskId !== "new") persistedTaskId.current = taskId;
   }, [taskId]);
@@ -96,6 +114,10 @@ export default function TaskDetailPage() {
   }, [dirty]);
 
   const save = useCallback(async (next: TrainingConfig) => {
+    if (saveController.current) return;
+    const controller = new AbortController();
+    saveController.current = controller;
+    const payload = JSON.stringify(taskDraftPayload(next));
     setSaveState("saving");
     setError("");
     try {
@@ -104,9 +126,11 @@ export default function TaskDetailPage() {
         const createResponse = await fetch(`${API_URL}/api/tasks`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ display_name: next.projectName.trim() || "cv_run" }),
+          signal: controller.signal,
         });
         const created = await createResponse.json().catch(() => ({}));
-        if (!createResponse.ok) throw new Error(created.detail || "Could not create task");
+        if (controller.signal.aborted) return;
+        if (!createResponse.ok) throw new Error(computeMessage(created.code, language === 'th', created.detail || "Could not create task"));
         if (typeof created.id !== "string" || !created.id) throw new Error("Task service returned an invalid task ID");
         id = created.id;
         persistedTaskId.current = id;
@@ -114,26 +138,34 @@ export default function TaskDetailPage() {
       if (!id) throw new Error("Could not create task");
       const response = await fetch(`${API_URL}/api/tasks/${encodeURIComponent(id)}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(taskDraftPayload(next)),
+        body: payload,
+        signal: controller.signal,
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || "Could not save task");
+      if (controller.signal.aborted) return;
+      if (!response.ok) throw new Error(computeMessage(data.code, language === 'th', data.detail || "Could not save task"));
       setTask(data);
-      setSaveState("saved");
-      setDirty(false);
-      if (taskId === "new") window.history.replaceState(window.history.state, "", `/tasks/${id}`);
+      savedPayload.current = payload;
+      const unchanged = latestConfig.current !== null && JSON.stringify(taskDraftPayload(latestConfig.current)) === payload;
+      setSaveState(unchanged ? "saved" : "unsaved");
+      setDirty(!unchanged);
+      // Changing the URL reloads the draft; defer it while newer local edits exist.
+      if (taskId === "new" && unchanged) window.history.replaceState(window.history.state, "", `/tasks/${id}`);
     } catch (caught) {
+      if (controller.signal.aborted) return;
       setSaveState("error");
       setError(caught instanceof Error ? caught.message : "Could not save task");
       throw caught;
+    } finally {
+      if (saveController.current === controller) saveController.current = null;
     }
-  }, [taskId]);
+  }, [taskId, language]);
 
   const changeConfig = (next: TrainingConfig, markDirty = true) => {
     setConfig(next); latestConfig.current = next; setError("");
     if (!markDirty) return;
     setDirty(true);
-    setSaveState("unsaved");
+    if (!saveController.current) setSaveState("unsaved");
   };
 
   const train = async () => {
@@ -142,10 +174,10 @@ export default function TaskDetailPage() {
     setStarting(true); setError("");
     try {
       const id = persistedTaskId.current;
-      if (!id || saveState !== "saved") throw new Error("Save the task before training");
+      if (!id || saveController.current || saveState !== "saved" || JSON.stringify(taskDraftPayload(current)) !== savedPayload.current) throw new Error("Save the task before training");
       const response = await fetch(`${API_URL}/api/tasks/${encodeURIComponent(id)}/start`, { method: "POST" });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || "Could not start training");
+      if (!response.ok) throw new Error(computeMessage(data.code, language === 'th', data.detail || "Could not start training"));
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not start training");
@@ -160,7 +192,7 @@ export default function TaskDetailPage() {
     {loading ? <EmptyState icon={Loader2} title="Loading task" description="Reading the latest task state." />
       : taskId !== "new" && !task ? <EmptyState icon={TriangleAlert} title="Task unavailable" description="This task does not exist or belongs to another user." />
       : (!task || task.status === "draft") && config ? <TaskConfiguration config={config} onChange={changeConfig} onSave={() => save(config)} onTrain={train} saveState={saveState} starting={starting} />
-      : task ? <TaskRun task={task} onRefresh={load} /> : null}
+      : task ? <TaskRun key={task.id} task={task} onRefresh={load} /> : null}
   </div>
     <AlertDialog open={Boolean(pendingHref)} onOpenChange={(open) => !open && setPendingHref(null)}>
       <AlertDialogContent>

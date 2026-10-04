@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Database,
+  Tags,
   ListTodo,
   Menu,
   UserRound,
@@ -17,6 +18,7 @@ import { useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
 
 const navItems = [
+  { title: "Annotation", href: "/annotate", icon: Tags },
   {
     title: "Dashboard",
     href: "/dashboard",
@@ -54,7 +56,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = authClient.useSession();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
-  const visibleNavItems = isAdmin ? [...navItems, adminNavItem] : navItems;
+  const visibleNavItems = isAdmin ? [...navItems, adminNavItem, { title: 'Compute', href: '/admin/compute', icon: ShieldCheck }] : navItems;
 
   // Close mobile sidebar when route changes
   useEffect(() => {

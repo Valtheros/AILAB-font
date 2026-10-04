@@ -14,6 +14,8 @@ import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { apiBaseUrl } from "@/lib/api";
 import { useLanguage } from "@/components/language-provider";
+import { ExecutionSelector } from './execution-selector';
+import { ComputeJob, ExecutionSelection, computeActive, computeMessage } from '@/lib/compute';
 
 const API_URL = apiBaseUrl();
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -87,7 +89,14 @@ export function ModelTestDialog({
   runSlug: string;
   modelName?: string;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const thai = language === 'th';
+  const [execution, setExecution] = useState<ExecutionSelection>({ mode: 'auto' });
+  const [job, setJob] = useState<ComputeJob | null>(null);
+  const generation = useRef(0);
+  const executionEdited = useRef(false);
+  const requestKey = useRef<string | null>(null);
+  const jobId = job?.id;
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [dragging, setDragging] = useState(false);
@@ -105,6 +114,9 @@ export function ModelTestDialog({
   }, [previewUrl]);
 
   const reset = useCallback(() => {
+    generation.current += 1;
+    requestKey.current = null;
+    setJob(null);
     setFile(null);
     setPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
@@ -117,8 +129,70 @@ export function ModelTestDialog({
   }, []);
 
   useEffect(() => {
-    if (!open) reset();
-  }, [open, reset]);
+    reset();
+    executionEdited.current = false;
+    if (!open) return;
+    const controller = new AbortController();
+    const version = generation.current;
+    fetch(`${API_URL}/api/compute/jobs?runSlug=${encodeURIComponent(runSlug)}`, { signal: controller.signal })
+      .then((r) => r.ok ? r.json() : null).then((data) => {
+        if (!controller.signal.aborted && version === generation.current && data?.job) {
+          setJob(data.job);
+          if (!executionEdited.current) setExecution(data.job.requestedExecution);
+          setPreviewUrl(`${API_URL}/api/compute/jobs/${data.job.id}/input`);
+        }
+      }).catch(() => undefined);
+    return () => { controller.abort(); generation.current += 1; };
+  }, [open, runSlug, reset]);
+
+  useEffect(() => {
+    if (!open || !jobId) return;
+    const controller = new AbortController();
+    const version = generation.current;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      let terminal = false;
+      try {
+        const response = await fetch(`${API_URL}/api/compute/jobs/${jobId}`, { signal: controller.signal });
+        const current = await response.json();
+        if (!response.ok) {
+          terminal = response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status);
+          throw new Error(computeMessage(current.code, thai, current.detail || 'Status unavailable'));
+        }
+        if (controller.signal.aborted || version !== generation.current) return;
+        setJob(current);
+        setError('');
+        terminal = !computeActive(current);
+        if (current.status === 'completed') {
+          // A completed job still needs retryable delivery of its result.
+          terminal = false;
+          const response = await fetch(`${API_URL}/api/compute/jobs/${jobId}/result`, { signal: controller.signal });
+          const data = await response.json();
+          if (!response.ok) {
+            terminal = response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status);
+            throw new Error(computeMessage(data.code, thai, data.detail));
+          }
+          if (!controller.signal.aborted && version === generation.current) {
+            setResult(data);
+            setPredicting(false);
+          }
+          return;
+        }
+        if (current.status === 'failed' || current.status === 'cancelled') {
+          setPredicting(false);
+          if (current.status === 'failed') setError(computeMessage(current.errorCode, thai, current.error));
+          return;
+        }
+      } catch (caught) {
+        if (controller.signal.aborted || version !== generation.current) return;
+        setError(caught instanceof TypeError || !(caught instanceof Error)
+          ? computeMessage('CONNECTION_INTERRUPTED', thai) : caught.message);
+      }
+      if (!controller.signal.aborted && !terminal) timer = setTimeout(poll, 2000);
+    };
+    void poll();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [open, jobId, thai]);
 
   const chooseFile = (next: File | null | undefined) => {
     if (!next) return;
@@ -130,6 +204,10 @@ export function ModelTestDialog({
       setError(t("test.error.tooLarge"));
       return;
     }
+    generation.current += 1;
+    requestKey.current = null;
+    setJob(null);
+    setPredicting(false);
     setError("");
     setResult(null);
     setFile(next);
@@ -147,20 +225,28 @@ export function ModelTestDialog({
     setPredicting(true);
     setError("");
     setResult(null);
+    const version = generation.current;
     try {
       const form = new FormData();
       form.append("file", file);
+      form.append('execution', JSON.stringify(execution));
+      // getRandomValues also works on HTTP deployments where randomUUID is unavailable.
+      requestKey.current ??= Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('');
       const response = await fetch(
         `${API_URL}/api/runs/${encodeURIComponent(runSlug)}/predict`,
-        { method: "POST", body: form },
+        { method: "POST", body: form, headers: { 'Idempotency-Key': requestKey.current } },
       );
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || t("test.error.failed"));
-      setResult(data as PredictResponse);
+      if (!response.ok) throw new Error(computeMessage(data.code, thai, data.detail || t("test.error.failed")));
+      if (version !== generation.current) return;
+      requestKey.current = null;
+      if (response.status === 202) setJob(data); else setResult(data as PredictResponse);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t("test.error.failed"));
+      if (version === generation.current) setError(caught instanceof TypeError
+        ? computeMessage('SUBMISSION_UNCONFIRMED', thai)
+        : caught instanceof Error ? caught.message : t("test.error.failed"));
     } finally {
-      setPredicting(false);
+      if (version === generation.current) setPredicting(false);
     }
   };
 
@@ -179,6 +265,22 @@ export function ModelTestDialog({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+          <ExecutionSelector value={execution} onChange={(next) => { executionEdited.current = true; requestKey.current = null; setExecution(next); }} disabled={predicting || computeActive(job)} />
+          {job && <div role="status" className="space-y-2 border-b pb-3 text-sm">
+            <p>{computeMessage(job.status, thai)}{job.assignedGpu && ` · ${job.assignedGpu.name || job.assignedGpu.uuid}`}</p>
+            {job.queueReason && <p className="text-muted-foreground">{computeMessage(job.queueReason, thai)}</p>}
+            {computeActive(job) && <Button variant="outline" onClick={async () => {
+              const version = generation.current;
+              try {
+                const response = await fetch(`${API_URL}/api/compute/jobs/${job.id}/cancel`, { method: 'POST' });
+                const data = await response.json();
+                if (version !== generation.current) return;
+                if (response.ok) setJob(data); else setError(computeMessage(data.code, thai, data.detail));
+              } catch {
+                if (version === generation.current) setError(thai ? 'ยกเลิกไม่สำเร็จ กรุณาลองอีกครั้ง' : 'Cancellation failed. Please retry.');
+              }
+            }}><X className="h-4 w-4" />{thai ? 'ยกเลิกงาน' : 'Cancel job'}</Button>}
+          </div>}
           {/* Upload area */}
           {!previewUrl ? (
             <div
@@ -273,7 +375,8 @@ export function ModelTestDialog({
                 </Button>
               </div>
               <p className="truncate text-xs text-muted-foreground">
-                {file?.name} · {((file?.size ?? 0) / 1024).toFixed(0)} KB
+                {file?.name ?? job?.inputName ?? (thai ? 'รูปทดสอบ' : 'Test image')}
+                {(file?.size ?? job?.inputBytes) != null && ` · ${Math.max(1, Math.ceil((file?.size ?? job?.inputBytes ?? 0) / 1024))} KB`}
               </p>
             </div>
           )}
@@ -295,7 +398,7 @@ export function ModelTestDialog({
 
           {/* Loading state: the first prediction has to load the checkpoint from
               disk, which is noticeably slower than later ones. */}
-          {predicting && (
+          {(predicting || computeActive(job)) && (
             <div className="flex items-center gap-3 rounded-md border bg-accent/40 p-4">
               <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
               <div className="min-w-0">
@@ -464,7 +567,7 @@ export function ModelTestDialog({
               {t("test.button.another")}
             </Button>
           )}
-          <Button onClick={predict} disabled={!file || predicting}>
+          <Button onClick={predict} disabled={!file || predicting || computeActive(job)}>
             {predicting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {predicting ? t("test.button.predicting") : t("test.button.predict")}
           </Button>

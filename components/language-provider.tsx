@@ -10,7 +10,6 @@ import {
 } from "react";
 import {
   LANGUAGE_COOKIE,
-  resolveLanguage,
   translate,
   type Language,
   type TranslationKey,
@@ -37,13 +36,6 @@ export function LanguageProvider({
   defaultLanguage: Language;
 }) {
   const [language, setLanguageState] = useState<Language>(defaultLanguage);
-
-  useEffect(() => {
-    const stored = localStorage.getItem(LANGUAGE_COOKIE);
-    if (stored) {
-      setLanguageState(resolveLanguage(stored));
-    }
-  }, []);
 
   useEffect(() => {
     document.documentElement.lang = language;

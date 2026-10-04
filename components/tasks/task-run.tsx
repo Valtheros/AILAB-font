@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ChartLine, CircleGauge, Download, Loader2, Sparkles, Square, Target, Terminal, Trophy } from "lucide-react";
+import { Activity, ChartLine, CircleGauge, Download, Sparkles, Square, Target, Terminal, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,8 @@ import { StatusBadge, type StatusTone } from "@/components/workspace/status-badg
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
 import type { TrainingTask } from "@/lib/trainingConfig";
 import { useLanguage } from "@/components/language-provider";
+import { ComputeJob, computeActive, computeMessage } from '@/lib/compute';
+import { useRouter } from 'next/navigation';
 
 const API_URL = apiBaseUrl();
 const TERMINAL = new Set(["completed", "exited", "failed", "stopped", "cancelled", "not_found"]);
@@ -36,8 +38,31 @@ function bytes(size: number) {
 }
 
 export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: () => Promise<void> }) {
-  const { t } = useLanguage();
-  const [status, setStatus] = useState(task.status);
+  const { t, language } = useLanguage();
+  const router = useRouter();
+  const [computeJob, setComputeJob] = useState<ComputeJob | null>(task.computeJob ?? null);
+  const computeJobId = task.computeJob?.id;
+  useEffect(() => {
+    if (!computeJobId) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/compute/jobs/${computeJobId}`, { signal: controller.signal });
+        if (response.ok) {
+          const current = await response.json();
+          if (controller.signal.aborted) return;
+          setComputeJob(current);
+          if (!computeActive(current)) return;
+        }
+      } catch { /* Event stream continues to expose persisted train status. */ }
+      if (!controller.signal.aborted) timer = setTimeout(poll, 5000);
+    };
+    void poll();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [computeJobId]);
+  const [streamStatus, setStatus] = useState(task.status);
+  const status = TERMINAL.has(task.status) ? task.status : streamStatus;
   const [logs, setLogs] = useState("");
   const [metrics, setMetrics] = useState<MetricRow[]>([]);
   const [showLogs, setShowLogs] = useState(!TERMINAL.has(task.status));
@@ -48,7 +73,6 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const [insights, setInsights] = useState<Insight[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setStatus(task.status); }, [task.status]);
   useEffect(() => {
     fetch(`${API_URL}/api/tasks/${encodeURIComponent(task.id)}/logs`)
       .then((response) => response.ok ? response.json() : { logs: "" })
@@ -68,7 +92,6 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   // so a run without it simply 404s and no box is shown.
   useEffect(() => {
     if (!task.runSlug) return;
-    setTestEval(null);
     fetch(`${API_URL}/api/runs/${encodeURIComponent(task.runSlug)}/files/test_evaluation.json`)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => setTestEval(data))
@@ -192,6 +215,17 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
       <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{task.modelName}</p><StatusBadge tone={tone(status)}>{status}</StatusBadge>{streamError && <StatusBadge tone="warning">{streamError}</StatusBadge>}</div><p className="mt-1 break-words text-sm text-muted-foreground">{task.displayName}{task.datasetName ? ` - ${task.datasetName}` : ""}</p></div>
       <div className="flex flex-wrap items-center gap-4"><div><p className="text-2xl font-semibold">{Math.round(epoch)}/{task.epochs}</p><p className="text-sm text-muted-foreground">epochs</p></div>{canTestModel && <Button onClick={() => setTestOpen(true)}><Sparkles className="h-4 w-4" />Test Model</Button>}{active && <Button variant="destructive" onClick={stop} disabled={stopping}><Square className="h-4 w-4" />{stopping ? "Stopping..." : "Stop Run"}</Button>}</div>
     </div>
+    {computeJob && <div className="space-y-2 border-b pb-4 text-sm">
+      <p>{language === 'th' ? 'อุปกรณ์ที่เลือก' : 'Requested device'}: {computeJob.requestedExecution.mode === 'gpu' ? computeJob.requestedExecution.gpuUuid : computeJob.requestedExecution.mode === 'cpu' ? 'CPU' : 'Auto GPU'}</p>
+      <p>{language === 'th' ? 'อุปกรณ์ที่ใช้จริง' : 'Assigned device'}: {computeJob.assignedGpu?.name || computeJob.assignedGpu?.uuid || (computeJob.requestedExecution.mode === 'cpu' && computeJob.status !== 'queued' ? 'CPU' : '—')}</p>
+      {computeJob.queueReason && <p role="status" className="text-muted-foreground">{computeMessage(computeJob.queueReason, language === 'th')}</p>}
+      {computeJob.errorCode && <p role="alert" className="text-destructive">{computeMessage(computeJob.errorCode, language === 'th', computeJob.error)}</p>}
+      {['failed','stopped','cancelled','completed'].includes(status) && <Button variant="outline" onClick={async () => {
+        const response = await fetch(`${API_URL}/api/tasks/${task.id}/clone`, { method: 'POST' });
+        const data = await response.json();
+        if (response.ok) router.push(`/tasks/${data.id}`); else setStreamError(data.detail || 'Could not create a new draft');
+      }}><Activity className="h-4 w-4" />Train again</Button>}
+    </div>}
     <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
       <Card><CardHeader><div className="flex justify-between"><div><CardTitle>Progress</CardTitle><CardDescription>{progress.toFixed(1)}% complete</CardDescription></div><Badge variant="outline">Epoch {Math.round(epoch)}</Badge></div></CardHeader><CardContent><Progress value={progress} className="h-3" /></CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><CircleGauge className="h-5 w-5" />Latest Metrics</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">{(keys.length ? keys.slice(0, 8) : ["train/loss", "val/loss", "val/accuracy", "lr"]).map((key) => <div key={key} className="rounded-md border p-3"><p className="break-words text-xs text-muted-foreground">{key}</p><p className="mt-2 text-xl font-semibold">{formatMetricValue(key, latest?.[key])}</p></div>)}</CardContent></Card>

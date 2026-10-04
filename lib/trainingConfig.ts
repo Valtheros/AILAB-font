@@ -1,6 +1,8 @@
 export type ConfigValue = number | string | boolean;
+import type { ComputeJob, ExecutionSelection } from './compute';
 
 export interface TrainingConfig {
+  execution: ExecutionSelection;
   taskType: string;
   modelType: string;
   modelName: string;
@@ -17,6 +19,7 @@ export interface TrainingConfig {
 }
 
 export interface TrainingTask extends TrainingConfig {
+  computeJob?: ComputeJob | null;
   id: string;
   displayName: string;
   status: string;
@@ -31,6 +34,7 @@ export interface TrainingTask extends TrainingConfig {
 }
 
 export const defaultConfig: TrainingConfig = {
+  execution: { mode: "auto", gpuUuid: null },
   taskType: "object_detection",
   modelType: "yolo",
   modelName: "yolo11n",
@@ -55,6 +59,7 @@ export const defaultConfig: TrainingConfig = {
 
 export function taskConfig(task: TrainingTask): TrainingConfig {
   return {
+    execution: task.execution ?? { mode: "auto", gpuUuid: null },
     taskType: task.taskType,
     modelType: task.modelType,
     modelName: task.modelName,
@@ -78,6 +83,7 @@ export function taskDraftPayload(config: TrainingConfig) {
       ? String(config.params.architecture ?? config.modelName)
     : config.modelName;
   return {
+    execution: config.execution,
     display_name: config.projectName.trim() || "cv_run",
     task_type: config.taskType,
     model_type: config.modelType,

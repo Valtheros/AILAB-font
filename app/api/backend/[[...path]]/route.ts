@@ -14,6 +14,7 @@ const forwardedRequestHeaders = [
   "accept-language",
   "content-type",
   "range",
+  "idempotency-key",
 ];
 
 const blockedResponseHeaders = new Set([

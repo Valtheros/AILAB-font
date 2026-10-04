@@ -248,7 +248,7 @@ export default function DatasetPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchDatasets();
