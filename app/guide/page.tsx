@@ -14,7 +14,6 @@ import {
   Folder,
   Image as ImageIcon,
   Layers3,
-  Settings2,
   SlidersHorizontal,
   Upload,
 } from "lucide-react";
@@ -509,6 +508,16 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
           </TabsList>
 
           <TabsContent value="workflow" className="space-y-4">
+            <section className="space-y-3 border-y py-5">
+              <h2 className="text-lg font-semibold"><I18nText textKey="guide.annotation.title" /></h2>
+              <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
+                <li><I18nText textKey="guide.annotation.account" /></li>
+                <li><I18nText textKey="guide.annotation.workflow" /></li>
+                <li><I18nText textKey="guide.annotation.publish" /></li>
+              </ol>
+              <p className="text-sm text-muted-foreground"><I18nText textKey="guide.annotation.formats" /></p>
+              <Button asChild variant="outline"><Link href="/annotate">Annotation <ArrowRight className="size-4" /></Link></Button>
+            </section>
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

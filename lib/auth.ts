@@ -38,6 +38,7 @@ assertAuthEmailDeliveryConfigured();
 export const auth = betterAuth({
   baseURL: appUrl,
   database: authDatabasePool,
+  disabledPaths: ["/email-otp/check-verification-otp"],
   session: {
     expiresIn: 60 * 60 * 24,
     updateAge: 60 * 60 * 24,

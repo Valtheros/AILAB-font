@@ -9,7 +9,6 @@ import {
   Loader2,
   MailCheck,
   RefreshCw,
-  ShieldCheck,
 } from "lucide-react";
 import { FieldError } from "@/components/auth/field-error";
 import { Button } from "@/components/ui/button";
@@ -138,7 +137,6 @@ export function ForgotPasswordForm() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isRequesting, setIsRequesting] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
   function setRequestFieldError(field: RequestField, message: string) {
@@ -201,25 +199,6 @@ export function ForgotPasswordForm() {
     return "";
   }
 
-  function showVerifyError(authError: AuthClientError | null | undefined) {
-    const code = authError?.code?.toLowerCase() ?? "";
-
-    if (isRateLimitError(authError) || code.includes("too_many_attempts")) {
-      setVerifyFieldError(
-        "otp",
-        "Too many attempts. Please request a new code and try again."
-      );
-      return;
-    }
-
-    if (isOtpError(authError)) {
-      setVerifyFieldError("otp", "The code is invalid or expired.");
-      return;
-    }
-
-    setError(authError?.message || "Could not verify the code.");
-  }
-
   function showPasswordError(authError: AuthClientError | null | undefined) {
     const message = authError?.message || "Could not reset password.";
     const lowerMessage = message.toLowerCase();
@@ -227,7 +206,9 @@ export function ForgotPasswordForm() {
     if (isOtpError(authError) || isRateLimitError(authError)) {
       setStep("verify");
       setNotice("");
-      setVerifyFieldError("otp", "The code is invalid or expired.");
+      setVerifyFieldError("otp", isRateLimitError(authError) || authError?.code?.toLowerCase().includes("too_many_attempts")
+        ? "Too many attempts. Please request a new code and try again."
+        : "The code is invalid or expired.");
       return;
     }
 
@@ -283,7 +264,7 @@ export function ForgotPasswordForm() {
     }
   }
 
-  async function verifyOtp(event: FormEvent<HTMLFormElement>) {
+  function continueWithOtp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setNotice("");
@@ -295,31 +276,8 @@ export function ForgotPasswordForm() {
     }
 
     setVerifyErrors({});
-    setIsVerifying(true);
-
-    try {
-      const response = await authClient.emailOtp.checkVerificationOtp({
-        email: result.data.email,
-        otp: result.data.otp,
-        type: "forget-password",
-      });
-
-      if (response.error) {
-        showVerifyError(response.error);
-        return;
-      }
-
-      setStep("password");
-      setNotice("Code verified. Set a new password.");
-    } catch (verifyError) {
-      setError(
-        verifyError instanceof Error
-          ? verifyError.message
-          : "Could not verify the code."
-      );
-    } finally {
-      setIsVerifying(false);
-    }
+    setStep("password");
+    setNotice(t("auth.forgot.codeCheckedOnUpdate"));
   }
 
   async function resetPassword(event: FormEvent<HTMLFormElement>) {
@@ -443,7 +401,7 @@ export function ForgotPasswordForm() {
         )}
 
         {step === "verify" && (
-          <form className="grid gap-4" noValidate onSubmit={verifyOtp}>
+          <form className="grid gap-4" noValidate onSubmit={continueWithOtp}>
             <div className="grid gap-2">
               <Label htmlFor="forgot-password-verify-email">Email</Label>
               <Input
@@ -485,13 +443,9 @@ export function ForgotPasswordForm() {
               />
               <FieldError id={verifyErrorIds.otp} message={verifyErrors.otp} />
             </div>
-            <Button disabled={isVerifying} type="submit">
-              {isVerifying ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ShieldCheck className="h-4 w-4" />
-              )}
-              Verify code
+            <Button type="submit">
+              <ArrowRight className="h-4 w-4" />
+              {t("auth.forgot.continue")}
             </Button>
             <div className="flex flex-wrap gap-2">
               <Button

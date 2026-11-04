@@ -28,6 +28,13 @@ async function getAdminUsers({ limit, offset, search }: { limit: number; offset:
   const params = search ? [`%${search}%`, limit, offset] : [limit, offset];
   const limitIndex = search ? 2 : 1;
   const offsetIndex = search ? 3 : 2;
+  const legacy = await authDatabasePool.query<{ projects: string | null; operations: string | null; collections: string | null; imports: string | null }>(
+    "select to_regclass('annotation_projects')::text as projects, to_regclass('annotation_operations')::text as operations, to_regclass('dataset_collections')::text as collections, to_regclass('dataset_import_intents')::text as imports",
+  );
+  const legacyProjects = legacy.rows[0]?.projects ? '(select count(*)::int from annotation_projects where owner_user_id = u.id)' : '0';
+  const legacyOperations = legacy.rows[0]?.operations ? '(select count(*)::int from annotation_operations where owner_user_id = u.id)' : '0';
+  const collections = legacy.rows[0]?.collections ? '(select count(*)::int from dataset_collections where owner_user_id = u.id)' : '0';
+  const imports = legacy.rows[0]?.imports ? '(select count(*)::int from dataset_import_intents where owner_user_id = u.id)' : '0';
 
   const [usersResult, countResult] = await Promise.all([
     authDatabasePool.query<AdminUserRow>(
@@ -57,13 +64,16 @@ async function getAdminUsers({ limit, offset, search }: { limit: number; offset:
           (
             select count(*)::int
             from datasets d
-            where d.owner_user_id = u.id and d.status <> 'deleted'
+            where d.owner_user_id = u.id
           ) as "datasetCount",
           (
             select count(*)::int
             from training_tasks tr
             where tr.owner_user_id = u.id
-          ) as "trainingRunCount"
+          ) as "trainingRunCount",
+          (select count(*)::int from label_studio_accounts ls where ls.owner_user_id = u.id) as "labelStudioAccountCount",
+          (${legacyProjects} + ${legacyOperations}) as "legacyAnnotationCount",
+          (${collections} + ${imports}) as "datasetVersionRecordCount"
         from "user" u
         left join session s on s."userId" = u.id
         ${where}
@@ -87,10 +97,13 @@ async function getAdminUsers({ limit, offset, search }: { limit: number; offset:
       banned: Boolean(user.banned),
       createdAt: new Date(user.createdAt).toISOString(),
       datasetCount: Number(user.datasetCount ?? 0),
+      datasetVersionRecordCount: Number(user.datasetVersionRecordCount ?? 0),
       emailVerified: Boolean(user.emailVerified),
       projectCount: Number(user.projectCount ?? 0),
       sessionCount: Number(user.sessionCount ?? 0),
       trainingRunCount: Number(user.trainingRunCount ?? 0),
+      labelStudioAccountCount: Number(user.labelStudioAccountCount ?? 0),
+      legacyAnnotationCount: Number(user.legacyAnnotationCount ?? 0),
       updatedAt: new Date(user.updatedAt).toISOString(),
       workspaceMembershipCount: Number(user.workspaceMembershipCount ?? 0),
     })),

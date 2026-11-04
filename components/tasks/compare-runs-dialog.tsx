@@ -101,16 +101,16 @@ export function CompareRunsDialog({
   runIds: string[];
 }) {
   const { t } = useLanguage();
-  const [data, setData] = useState<CompareResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const requestKey = JSON.stringify([datasetSlug, runIds, t("compare.error.failed")]);
+  const [response, setResponse] = useState<{ key: string; data: CompareResponse | null; error: string } | null>(null);
+  const current = response?.key === requestKey ? response : null;
+  const data = current?.data ?? null;
+  const error = current?.error ?? '';
+  const loading = open && runIds.length >= 2 && !current;
 
   useEffect(() => {
     if (!open || runIds.length < 2) return;
     const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    setData(null);
     fetch(
       `${API_URL}/api/datasets/${encodeURIComponent(datasetSlug)}/runs/compare?run_ids=${encodeURIComponent(runIds.join(","))}`,
       { cache: "no-store", signal: controller.signal },
@@ -120,14 +120,15 @@ export function CompareRunsDialog({
         if (!response.ok) throw new Error(payload.detail || t("compare.error.failed"));
         return payload as CompareResponse;
       })
-      .then(setData)
-      .catch((caught) => {
-        if (caught?.name === "AbortError") return;
-        setError(caught instanceof Error ? caught.message : t("compare.error.failed"));
+      .then((data) => {
+        if (!controller.signal.aborted) setResponse({ key: requestKey, data, error: '' });
       })
-      .finally(() => setLoading(false));
+      .catch((caught) => {
+        if (controller.signal.aborted) return;
+        setResponse({ key: requestKey, data: null, error: caught instanceof Error ? caught.message : t("compare.error.failed") });
+      });
     return () => controller.abort();
-  }, [open, datasetSlug, runIds, t]);
+  }, [open, datasetSlug, runIds, t, requestKey]);
 
   const rows = data ? toChartRows(data.runs) : [];
   const metricLabel = data?.sharedMetric?.label ?? t("compare.metric.mixed");

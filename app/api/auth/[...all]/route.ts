@@ -134,6 +134,20 @@ export function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const url = new URL(request.url);
+  let path: string;
+  try {
+    path = decodeURIComponent(url.pathname).replace(/\/+$/, "");
+  } catch {
+    return authErrorResponse({ code: "INVALID_PATH", message: "Invalid request path.", status: 400 });
+  }
+
+  if (path.endsWith("/api/auth/email-otp/check-verification-otp")) {
+    return authErrorResponse({
+      code: "OTP_FLOW_UPDATED",
+      message: "This page has been updated. Refresh it and try again.",
+      status: 410,
+    });
+  }
 
   if (url.pathname.endsWith("/api/auth/sign-up/email")) {
     const duplicateResponse = await rejectDuplicateSignupEmail(request);

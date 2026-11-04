@@ -16,6 +16,9 @@ function ok(message: string): AdminActionResult {
 }
 
 function fail(error: unknown): AdminActionResult {
+  if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23503') {
+    return { ok: false, message: 'This account still has linked data that could not be removed. Check the server logs before retrying.' };
+  }
   return { ok: false, message: error instanceof Error ? error.message : String(error) };
 }
 
@@ -45,11 +48,21 @@ async function ensureTargetExists(userId: string) {
 }
 
 async function getUserDeleteImpact(userId: string) {
+  const legacy = await authDatabasePool.query<{ projects: string | null; operations: string | null; collections: string | null; imports: string | null }>(
+    "select to_regclass('annotation_projects')::text as projects, to_regclass('annotation_operations')::text as operations, to_regclass('dataset_collections')::text as collections, to_regclass('dataset_import_intents')::text as imports",
+  );
+  const legacyProjects = legacy.rows[0]?.projects ? '(select count(*)::int from annotation_projects where owner_user_id = u.id)' : '0';
+  const legacyOperations = legacy.rows[0]?.operations ? '(select count(*)::int from annotation_operations where owner_user_id = u.id)' : '0';
+  const collections = legacy.rows[0]?.collections ? '(select count(*)::int from dataset_collections where owner_user_id = u.id)' : '0';
+  const imports = legacy.rows[0]?.imports ? '(select count(*)::int from dataset_import_intents where owner_user_id = u.id)' : '0';
   const result = await authDatabasePool.query<{
     workspaceMemberships: number;
     projects: number;
     datasets: number;
     trainingRuns: number;
+    labelStudioAccounts: number;
+    legacyAnnotations: number;
+    datasetVersionRecords: number;
   }>(
     `
       select
@@ -66,13 +79,16 @@ async function getUserDeleteImpact(userId: string) {
         (
           select count(*)::int
           from datasets d
-          where d.owner_user_id = u.id and d.status <> 'deleted'
+          where d.owner_user_id = u.id
         ) as datasets,
         (
           select count(*)::int
           from training_tasks tr
           where tr.owner_user_id = u.id
-        ) as "trainingRuns"
+        ) as "trainingRuns",
+        (select count(*)::int from label_studio_accounts ls where ls.owner_user_id = u.id) as "labelStudioAccounts",
+        (${legacyProjects} + ${legacyOperations}) as "legacyAnnotations",
+        (${collections} + ${imports}) as "datasetVersionRecords"
       from "user" u
       where u.id = $1
       limit 1
@@ -85,12 +101,18 @@ async function getUserDeleteImpact(userId: string) {
     projects: 0,
     datasets: 0,
     trainingRuns: 0,
+    labelStudioAccounts: 0,
+    legacyAnnotations: 0,
+    datasetVersionRecords: 0,
   };
   const total =
     Number(impact.workspaceMemberships) +
     Number(impact.projects) +
     Number(impact.datasets) +
-    Number(impact.trainingRuns);
+    Number(impact.trainingRuns) +
+    Number(impact.labelStudioAccounts) +
+    Number(impact.legacyAnnotations) +
+    Number(impact.datasetVersionRecords);
 
   return { ...impact, total };
 }
