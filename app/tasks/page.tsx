@@ -119,7 +119,10 @@ export default function TasksPage() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Start the initial task request and loading state.
+    void load();
+  }, [load]);
 
   const visibleTasks = useMemo(() => {
     const search = query.trim().toLowerCase();

@@ -29,6 +29,7 @@ export function ComputeAdmin() {
   }, []);
   useEffect(() => {
     const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Start the async inventory poll on mount.
     void load(controller.signal);
     const timer = setInterval(() => void load(controller.signal), 5000);
     return () => { controller.abort(); clearInterval(timer); };

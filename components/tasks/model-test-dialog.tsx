@@ -129,6 +129,7 @@ export function ModelTestDialog({
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear the previous test when the target changes.
     reset();
     executionEdited.current = false;
     if (!open) return;

@@ -79,6 +79,7 @@ export default function TaskDetailPage() {
   }, [taskId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Start loading the selected task on mount.
     void load();
     return () => {
       loadController.current?.abort();

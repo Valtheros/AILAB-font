@@ -202,6 +202,7 @@ export default function DatasetPage() {
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(DATASET_TAGS_STORAGE_KEY) ?? "{}");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore browser-only preferences after hydration.
       if (stored && typeof stored === "object") setTagPreferences(stored);
     } catch {
       localStorage.removeItem(DATASET_TAGS_STORAGE_KEY);
@@ -251,6 +252,7 @@ export default function DatasetPage() {
   }, [t]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Start the initial dataset request and loading state.
     fetchDatasets();
   }, [fetchDatasets]);
 
