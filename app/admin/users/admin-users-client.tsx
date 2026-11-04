@@ -70,7 +70,10 @@ export type AdminUserRow = {
   workspaceMembershipCount: number;
   projectCount: number;
   datasetCount: number;
+  datasetVersionRecordCount?: number;
   trainingRunCount: number;
+  labelStudioAccountCount: number;
+  legacyAnnotationCount: number;
 };
 
 type AdminUsersClientProps = {
@@ -120,7 +123,10 @@ function userDeleteImpactTotal(user: AdminUserRow) {
     user.workspaceMembershipCount +
     user.projectCount +
     user.datasetCount +
-    user.trainingRunCount
+    (user.datasetVersionRecordCount ?? 0) +
+    user.trainingRunCount +
+    user.labelStudioAccountCount +
+    user.legacyAnnotationCount
   );
 }
 
@@ -134,11 +140,11 @@ function userDeleteDescription(user: AdminUserRow) {
     `${user.email} has existing workspace data linked to this account:`,
     `Workspace memberships: ${user.workspaceMembershipCount}`,
     `Projects: ${user.projectCount}`,
-    `Datasets: ${user.datasetCount}`,
+    `Dataset versions (including removed files): ${user.datasetCount}`,
+    `Dataset collection/import records: ${user.datasetVersionRecordCount ?? 0}`,
     `Training runs: ${user.trainingRunCount}`,
     "",
-    "Removing this user deletes only the auth account, account credentials, and sessions.",
-    "Existing workspace data will remain, but created_by/user_id may point to a deleted user id.",
+    "The cleanup dialog lets you disable the account, transfer supported data, or delete the account and its data.",
   ].join("\n");
 }
 
@@ -624,11 +630,14 @@ export function AdminUsersClient({
           <DialogHeader>
             <DialogTitle>Manage data for {cleanupDialog?.user.email}</DialogTitle>
             <DialogDescription>
-              This account owns {cleanupDialog?.impact.datasets ?? 0} dataset(s), {cleanupDialog?.impact.runs ?? 0} run(s), and {((cleanupDialog?.impact.totalBytes ?? 0) / 1024 / 1024).toFixed(1)} MB on disk.
+              This account owns {cleanupDialog?.impact.datasets ?? 0} dataset version(s), including versions whose files were removed, {cleanupDialog?.impact.runs ?? 0} run(s), and {((cleanupDialog?.impact.totalBytes ?? 0) / 1024 / 1024).toFixed(1)} MB on disk.
               {` Projects: ${cleanupDialog?.impact.projects ?? 0}. Workspace memberships: ${cleanupDialog?.impact.workspaceMemberships ?? 0}.`}
               {(cleanupDialog?.impact.activeJobs.length ?? 0) > 0 && ` Active jobs: ${cleanupDialog?.impact.activeJobs.map((job) => `${job.run_slug} (${job.status})`).join(", ")}.`}
+              {Boolean(cleanupDialog?.user.labelStudioAccountCount) && " Deleting the account also permanently deletes its Label Studio account, projects, annotations and uploaded images. Label Studio data cannot be transferred here."}
+              {Boolean(cleanupDialog?.user.legacyAnnotationCount) && " This account also has data from the previous Annotation system. That data must be handled separately before the account can be deleted."}
             </DialogDescription>
           </DialogHeader>
+          {message && <p role="alert" className="text-sm text-destructive">{message}</p>}
           <div className="space-y-3 py-4">
             <Button className="w-full justify-start" disabled={isPending} onClick={() => runAction(() => disableUserAction(cleanupDialog!.user.id), () => setCleanupDialog(null))} variant="outline">
               <Ban className="h-4 w-4" /> Disable account and keep data
