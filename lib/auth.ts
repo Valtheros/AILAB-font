@@ -21,6 +21,9 @@ const trustedOrigins = (
   .filter(Boolean);
 
 const secret = process.env.BETTER_AUTH_SECRET ?? "dev-only-change-me-in-production";
+const trustedProxies = (process.env.TRUSTED_PROXY_IPS ?? "")
+  .split(/[\s,]+/)
+  .filter(Boolean);
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
 const isProductionBuild = process.env.NEXT_PHASE === "phase-production-build";
@@ -37,6 +40,7 @@ assertAuthEmailDeliveryConfigured();
 
 export const auth = betterAuth({
   baseURL: appUrl,
+  advanced: { ipAddress: { trustedProxies } },
   database: authDatabasePool,
   disabledPaths: ["/email-otp/check-verification-otp"],
   session: {

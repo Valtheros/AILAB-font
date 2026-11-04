@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, ExternalLink, RefreshCw, Upload, X } from "lucide-react";
+import Link from "next/link";
+import { Check, ExternalLink, FileArchive, RefreshCw, Tags, Upload, X } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
 import { Button } from "@/components/ui/button";
+import { LoadingState } from "@/components/workspace/loading-state";
 import { useLanguage } from "@/components/language-provider";
 import { apiBaseUrl } from "@/lib/api";
 
@@ -93,9 +95,11 @@ function Annotation() {
       {account?.activated && account.url && <Button asChild><a href={account.url} target="_blank" rel="noopener noreferrer"><ExternalLink className="size-4" />{text("Open Label Studio", "เปิด Label Studio")}</a></Button>}
     </header>
     {error && <div role="alert" className="space-y-3 border-l-2 border-destructive pl-4"><p className="break-words text-destructive">{errorText(error, language)}</p><Button variant="outline" disabled={busy} onClick={() => { setError(""); setReload(v => v + 1); }}><RefreshCw className="size-4" />{text("Retry", "ลองใหม่")}</Button></div>}
-    {!account && !error && <p role="status">{text("Loading…", "กำลังโหลด…")}</p>}
+    {!account && !error && <LoadingState icon={Tags} title={text("Loading Annotation", "กำลังโหลด Annotation")} />}
     {account && !account.activated && <Button disabled={busy || account.disabled} onClick={() => void perform(async () => { const next = await request<Account>("/account", "POST"); if (next.url) window.location.assign(next.url); })}>{text("Set up Label Studio account", "ตั้งค่าบัญชี Label Studio")}</Button>}
-    {pending && <section className="space-y-3 py-6" aria-live="polite"><h2 className="text-lg font-semibold">{text("Preparing import preview", "กำลังตรวจสอบ dataset")}</h2><progress className="h-2 w-full" max={operation?.total || 1} value={operation?.processed || 0} /><p className="text-sm text-muted-foreground">{operation?.processed || 0} / {operation?.total || 0}</p></section>}
+    {pending && !error && <LoadingState icon={FileArchive} title={text("Preparing import preview", "กำลังเตรียมตัวอย่างชุดข้อมูล")}
+      description={operation?.status === "queued" ? text("Waiting to start", "กำลังรอเริ่มประมวลผล") : text("Checking the dataset", "กำลังตรวจสอบชุดข้อมูล")}
+      progress={{ current: operation?.processed ?? 0, total: operation?.total ?? 0, unit: text("images", "ภาพ") }} />}
     {operation?.status === "failed" && <section className="space-y-3"><p role="alert" className="break-words text-destructive">{errorText(operation.error || "Operation failed.", language, operation.error_code, operation.error_details)}</p><p className="break-all text-xs text-muted-foreground">Request ID: {operation.requestId || operation.id}</p><Button disabled={busy} onClick={() => void perform(async () => { await request(`/operations/${operation.id}/retry`, "POST"); setReload(v => v + 1); })}><RefreshCw className="size-4" />{text("Retry", "ลองใหม่")}</Button></section>}
     {operation?.status === "cancelled" && <p>{text("Transfer cancelled. Your Label Studio project is unchanged.", "ยกเลิกการนำเข้าแล้ว โปรเจกต์ใน Label Studio ยังอยู่เหมือนเดิม")}</p>}
     {operation?.status === "completed" && result?.preview && <section className="space-y-6 py-2">
@@ -105,7 +109,7 @@ function Annotation() {
       <div className="flex flex-wrap gap-2">{result.classes.map(name => <span key={name} className="max-w-full break-words rounded border px-2 py-1 text-sm">{name}</span>)}</div>
       <div><h3 className="mb-3 text-sm text-muted-foreground">{text("Compatible models", "โมเดลที่รองรับ")}</h3><div className="flex flex-wrap gap-2">{result.preview.compatible_models?.filter(model => model.ready).map(model => <span className="rounded border px-2 py-1 text-sm" key={model.id}>{model.label}</span>)}</div></div>
       {result.preview.conversion_warnings?.map(warning => <p key={warning} className="text-sm text-amber-600 dark:text-amber-400">{warning}</p>)}
-      {result.accepted ? <div className="flex flex-wrap items-center gap-4"><span className="inline-flex items-center gap-2 text-emerald-600 dark:text-emerald-400"><Check className="size-4" />{text("Dataset imported", "นำเข้า dataset แล้ว")}</span><Button asChild variant="outline"><a href="/dataset">{text("Open datasets", "เปิด Dataset")}</a></Button></div> : <div className="flex flex-wrap gap-3">
+      {result.accepted ? <div className="flex flex-wrap items-center gap-4"><span className="inline-flex items-center gap-2 text-emerald-600 dark:text-emerald-400"><Check className="size-4" />{text("Dataset imported", "นำเข้า dataset แล้ว")}</span><Button asChild variant="outline"><Link href="/dataset">{text("Open datasets", "เปิด Dataset")}</Link></Button></div> : <div className="flex flex-wrap gap-3">
         <Button disabled={busy} onClick={() => void perform(async () => { const next = await request<NonNullable<Operation["result"]>>(`/operations/${operation.id}/accept`, "POST"); setOperation({ ...operation, result: next }); })}><Upload className="size-4" />{text("Import dataset", "นำเข้า dataset")}</Button>
         <Button variant="outline" disabled={busy} onClick={() => void perform(async () => { const next = await request<NonNullable<Operation["result"]> | { discarded: true }>(`/operations/${operation.id}/discard`, "POST"); setOperation("accepted" in next && next.accepted ? { ...operation, result: next } : { ...operation, status: "cancelled" }); })}><X className="size-4" />{text("Cancel", "ยกเลิก")}</Button>
       </div>}

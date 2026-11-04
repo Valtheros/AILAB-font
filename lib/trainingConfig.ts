@@ -19,6 +19,12 @@ export interface TrainingConfig {
 }
 
 export interface TrainingTask extends TrainingConfig {
+  datasetId?: string | null;
+  datasetCollectionName?: string | null;
+  datasetVersion?: number | null;
+  datasetStatus?: string | null;
+  datasetContentSha256?: string | null;
+  datasetProvenance?: string;
   computeJob?: ComputeJob | null;
   id: string;
   displayName: string;

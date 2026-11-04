@@ -11,7 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { BatchTest } from "@/components/tasks/batch-test";
 import { apiBaseUrl } from "@/lib/api";
 import { useLanguage } from "@/components/language-provider";
 import { ExecutionSelector } from './execution-selector';
@@ -91,6 +93,7 @@ export function ModelTestDialog({
 }) {
   const { t, language } = useLanguage();
   const thai = language === 'th';
+  const [mode, setMode] = useState("single");
   const [execution, setExecution] = useState<ExecutionSelection>({ mode: 'auto' });
   const [job, setJob] = useState<ComputeJob | null>(null);
   const generation = useRef(0);
@@ -260,11 +263,18 @@ export function ModelTestDialog({
             Test Model
           </DialogTitle>
           <DialogDescription>
-            {t("test.dialog.description")}
+            {mode === "batch" ? (thai ? "ทำนายภาพหลายภาพด้วยโมเดลที่ฝึกแล้ว" : "Run predictions for multiple images with the trained model.") : t("test.dialog.description")}
             {modelName ? ` (${modelName})` : ""}
           </DialogDescription>
         </DialogHeader>
 
+        <Tabs value={mode} onValueChange={setMode} className="flex min-h-0 flex-1 flex-col">
+          <TabsList className="w-fit">
+            <TabsTrigger value="single">{thai ? "ภาพเดียว" : "Single image"}</TabsTrigger>
+            <TabsTrigger value="batch">{thai ? "หลายภาพ" : "Multiple images"}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="batch" className="flex min-h-0 flex-1 flex-col"><BatchTest runSlug={runSlug} /></TabsContent>
+          <TabsContent value="single" className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
           <ExecutionSelector value={execution} onChange={(next) => { executionEdited.current = true; requestKey.current = null; setExecution(next); }} disabled={predicting || computeActive(job)} />
           {job && <div role="status" className="space-y-2 border-b pb-3 text-sm">
@@ -573,6 +583,8 @@ export function ModelTestDialog({
             {predicting ? t("test.button.predicting") : t("test.button.predict")}
           </Button>
         </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

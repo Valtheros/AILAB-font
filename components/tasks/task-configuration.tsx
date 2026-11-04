@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Activity, Boxes, CheckCircle, Cpu, Database, Loader2, Play, RefreshCw, Save, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { useLanguage } from "@/components/language-provider";
+import { LoadingState } from "@/components/workspace/loading-state";
 import { apiBaseUrl } from "@/lib/api";
 import { CVCatalog, ModelSpec, ParamSpec, catalogPlaceholder, modelDefaults, getModel, getTask } from "@/lib/cvCatalog";
 import { ConfigValue, TrainingConfig } from "@/lib/trainingConfig";
 import { ExecutionSelector } from './execution-selector';
+import { executionReadiness, initialComputeAvailability } from '@/lib/compute';
 
 const API_URL = apiBaseUrl();
+const VRAM_ESTIMATE_WARNING = "VRAM is an estimate, not a guarantee against out-of-memory errors.";
 
 interface ResourcePlanPreview {
   ok: boolean;
@@ -32,8 +35,10 @@ interface ResourcePlanPreview {
 
 interface Dataset {
   id: string; name: string; images: number; size: string; formats: string[]; tasks: string[];
+  collectionName?: string | null; version?: number | null;
   datasetTask?: string; canonicalTask?: string; canonicalFormat?: string;
   compatibleModels?: Array<{ id: string; ready: boolean }>;
+  labelSchema?: { origin: string; numClasses?: number } | null;
 }
 
 const taskIcons: Record<string, typeof Activity> = { image_classification: Cpu, segmentation: Boxes, object_detection: Activity };
@@ -52,25 +57,37 @@ function coerce(spec: ParamSpec, raw: string | boolean): ConfigValue {
   return String(raw);
 }
 
-function ParamInput({ spec, value, onChange }: { spec: ParamSpec; value: ConfigValue; onChange: (value: ConfigValue) => void }) {
+function ParamInput({ spec, value, onChange, modelType, disabled = false }: { spec: ParamSpec; value: ConfigValue; onChange: (value: ConfigValue) => void; modelType: string; disabled?: boolean }) {
   const { t } = useLanguage();
+  const id = useId();
+  const labelKey = spec.key === 'epochs' ? 'config.label.epochs' : spec.key === 'batch_size' ? 'config.label.batch'
+    : spec.key === 'image_size' && ['faster_rcnn', 'mask_rcnn'].includes(modelType) ? 'config.label.shortSide'
+    : ['image_size', 'imgsz'].includes(spec.key) ? 'config.label.imageSize' : spec.key === 'encoder_name' ? 'config.label.encoder' : '';
+  const label = labelKey ? t(labelKey) : spec.label;
+  const help = spec.key === 'epochs' ? 'config.param.epochs' : spec.key === 'batch_size' ? 'config.param.batch'
+    : spec.key === 'image_size' && ['faster_rcnn', 'mask_rcnn'].includes(modelType) ? 'config.param.shortSide'
+    : ['image_size', 'imgsz'].includes(spec.key) ? 'config.param.imageSize'
+    : ['architecture', 'model_size'].includes(spec.key) ? 'config.param.architecture'
+    : spec.key === 'encoder_name' ? 'config.param.encoder' : spec.key === 'pretrained' ? 'config.param.pretrained' : `config.param.${spec.key}`;
+  const translatedHelp = t(help);
+  const description = translatedHelp === help ? (spec.description ? t(spec.description) : '') : translatedHelp;
   if (spec.type === "boolean") return (
     <div className="flex min-h-24 items-center justify-between rounded-md border p-4">
-      <div className="pr-4"><Label>{spec.label}</Label>{spec.description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{t(spec.description)}</p>}</div>
-      <Switch checked={Boolean(value)} onCheckedChange={onChange} />
+      <div className="pr-4"><Label htmlFor={id}>{label}</Label>{description && <p id={`${id}-help`} className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>}</div>
+      <Switch id={id} aria-describedby={description ? `${id}-help` : undefined} disabled={disabled} checked={Boolean(value)} onCheckedChange={onChange} />
     </div>
   );
   if (spec.type === "select") return (
-    <div className="space-y-2"><Label>{spec.label}</Label>
-      <Select value={String(value ?? spec.default)} onValueChange={onChange}><SelectTrigger><SelectValue /></SelectTrigger>
+    <div className="space-y-2"><Label htmlFor={id}>{label}</Label>
+      <Select value={String(value ?? spec.default)} onValueChange={onChange} disabled={disabled}><SelectTrigger id={id} aria-describedby={description ? `${id}-help` : undefined}><SelectValue /></SelectTrigger>
         <SelectContent>{spec.options?.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-      </Select>{spec.description && <p className="text-xs leading-5 text-muted-foreground">{t(spec.description)}</p>}
+      </Select>{description && <p id={`${id}-help`} className="text-xs leading-5 text-muted-foreground">{description}</p>}
     </div>
   );
   return (
-    <div className="space-y-2"><Label>{spec.label}</Label>
-      <Input type={spec.type === "number" ? "number" : "text"} value={String(value ?? spec.default)} min={spec.min} max={spec.max} step={spec.step} onChange={(event) => onChange(coerce(spec, event.target.value))} />
-      {spec.description && <p className="text-xs leading-5 text-muted-foreground">{t(spec.description)}</p>}
+    <div className="space-y-2"><Label htmlFor={id}>{label}</Label>
+      <Input id={id} aria-describedby={description ? `${id}-help` : undefined} disabled={disabled} type={spec.type === "number" ? "number" : "text"} value={String(value ?? spec.default)} min={spec.min} max={spec.max} step={spec.step} onChange={(event) => onChange(coerce(spec, event.target.value))} />
+      {description && <p id={`${id}-help`} className="text-xs leading-5 text-muted-foreground">{description}</p>}
     </div>
   );
 }
@@ -83,11 +100,12 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
   saveState: "unsaved" | "saved" | "saving" | "error";
   starting: boolean;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [catalog, setCatalog] = useState<CVCatalog>(catalogPlaceholder);
   const [catalogStatus, setCatalogStatus] = useState<"loading" | "ready" | "error">("loading");
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [datasetError, setDatasetError] = useState("");
+  const [computeAvailability, setComputeAvailability] = useState(initialComputeAvailability);
 
   useEffect(() => {
     Promise.all([
@@ -123,8 +141,16 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
   // A response belongs to one configuration; never show a previous model as safe.
   const preview = resourcePreview?.request === resourceRequest ? resourcePreview : null;
   const memory = preview?.plan;
-  const memoryStatus = !preview ? "config.memory.checking" : !memory ? "config.memory.unavailable" : memory.ok && memory.warnings.length === 0 ? "config.memory.ready" : "config.memory.adjust";
-  const memoryMessages = memory ? [...new Set([...memory.errors, ...memory.warnings, ...memory.suggestions])] : [];
+  const readiness = executionReadiness(config.execution, computeAvailability);
+  const memoryStatus = !preview ? "config.memory.checking" : !memory ? "config.memory.unavailable" : !memory.ok ? "config.memory.adjust" : memory.warnings.length ? "config.memory.readyWithWarnings" : "config.memory.ready";
+  const memoryMessages = memory ? [...new Set([...memory.errors, ...memory.warnings.filter((warning) => warning !== VRAM_ESTIMATE_WARNING), ...memory.suggestions])] : [];
+  const trainBlockReason = !config.datasetName ? "config.train.selectDataset"
+    : !['ready', 'busy'].includes(readiness) ? `config.device.${readiness}`
+    : !memory ? (preview ? "config.memory.retry" : "config.memory.checking")
+    : !memory.ok ? "config.train.adjustMemory"
+    : saveState === "saving" ? "config.train.saving"
+    : saveState === "error" ? "config.train.saveFailed"
+    : saveState !== "saved" ? "config.train.saveFirst" : null;
   useEffect(() => {
     if (catalogStatus !== "ready") return;
     const controller = new AbortController();
@@ -172,30 +198,40 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
     if (spec.key === "seed") next.seed = Number(value);
     onChange(next);
   };
+  const beginnerKeys = new Set(['architecture', 'model_size', 'encoder_name', 'image_size', 'imgsz', 'pretrained']);
+  const basicModelParams = selectedModel.params.filter((spec) => beginnerKeys.has(spec.key));
+  const advancedModelParams = selectedModel.params.filter((spec) => !beginnerKeys.has(spec.key));
+  const advancedCommonParams = catalog.common_params.filter((spec) => !['device', 'epochs', 'batch_size'].includes(spec.key));
+  const labelSchema = datasetsForModel.find((dataset) => dataset.name === config.datasetName)?.labelSchema;
+  const datasetControlsMasks = selectedModel.id === 'deeplabv3plus' && labelSchema?.origin === 'label_studio' && Number.isInteger(labelSchema.numClasses) && Number(labelSchema.numClasses) > 0;
 
-  if (catalogStatus !== "ready") return (
+  if (catalogStatus === "loading") return <LoadingState icon={Settings} title={language === "th" ? "กำลังโหลดการตั้งค่า" : "Loading configuration"} />;
+  if (catalogStatus === "error") return (
     <Card><CardContent className="flex min-h-48 items-center justify-center gap-2 text-muted-foreground">
-      {catalogStatus === "loading" ? <Loader2 className="h-5 w-5 animate-spin" /> : <TriangleAlert className="h-5 w-5" />}
-      {catalogStatus === "loading" ? "Loading configuration..." : "Model catalog unavailable"}
+      <TriangleAlert className="h-5 w-5" />
+      {language === "th" ? "โหลดรายการโมเดลไม่สำเร็จ" : "Model catalog unavailable"}
     </CardContent></Card>
   );
 
   return <div className="mx-auto max-w-5xl space-y-4">
-    <div className="flex justify-end"><StatusBadge tone={saveState === "error" ? "warning" : "neutral"}>{saveState === "unsaved" ? "Unsaved" : saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : "Saved"}</StatusBadge></div>
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" />Task</CardTitle><CardDescription>{t("config.task.description")}</CardDescription></CardHeader>
-      <CardContent className="grid gap-2 md:grid-cols-3">{catalog.tasks.map((task) => { const Icon = taskIcons[task.id] ?? Activity; const active = task.id === selectedTask.id; return <button key={task.id} onClick={() => chooseTask(task.id)} className={`rounded-md border p-4 text-left ${active ? "border-foreground bg-foreground text-background" : "hover:bg-accent"}`}><Icon className="mb-3 h-5 w-5" /><p className="font-medium">{task.label}</p><p className={`text-xs ${active ? "text-background/70" : "text-muted-foreground"}`}>{task.models.length} models</p></button>; })}</CardContent>
+    <div className="flex justify-end"><StatusBadge tone={saveState === "error" ? "warning" : "neutral"}>{t(saveState === "unsaved" ? "config.save.unsaved" : saveState === "saving" ? "config.save.saving" : saveState === "error" ? "config.save.failed" : "config.save.saved")}</StatusBadge></div>
+    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" />{t('config.title.task')}</CardTitle><CardDescription>{t("config.task.description")}</CardDescription></CardHeader>
+      <CardContent className="grid gap-2 md:grid-cols-3">{catalog.tasks.map((task) => { const Icon = taskIcons[task.id] ?? Activity; const active = task.id === selectedTask.id; return <button key={task.id} onClick={() => chooseTask(task.id)} className={`rounded-md border p-4 text-left ${active ? "border-foreground bg-foreground text-background" : "hover:bg-accent"}`}><Icon className="mb-3 h-5 w-5" /><p className="font-medium">{task.label}</p><p className={`text-xs ${active ? "text-background/70" : "text-muted-foreground"}`}>{task.models.length} {t('config.models')}</p></button>; })}</CardContent>
     </Card>
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Cpu className="h-5 w-5" />Model</CardTitle><CardDescription>{t(selectedTask.description)}</CardDescription></CardHeader>
+    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Cpu className="h-5 w-5" />{t('config.title.model')}</CardTitle><CardDescription>{t(selectedTask.description)}</CardDescription></CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-2">{selectedTask.models.map((model) => { const active = model.id === selectedModel.id; return <button key={model.id} onClick={() => chooseModel(model)} className={`rounded-md border p-4 text-left ${active ? "border-foreground bg-foreground text-background" : "hover:bg-accent"}`}><div className="flex justify-between"><p className="font-semibold">{model.label}</p>{active && <CheckCircle className="h-5 w-5" />}</div><p className={`mt-2 text-sm leading-6 ${active ? "text-background/80" : "text-muted-foreground"}`}>{t(model.reason)}</p></button>; })}</CardContent>
     </Card>
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Database className="h-5 w-5" />Dataset</CardTitle><CardDescription>{t("config.dataset.description")}</CardDescription></CardHeader>
-      <CardContent className="space-y-2">{datasetError && <p className="text-sm text-destructive">{datasetError}</p>}{datasetsForModel.map((dataset) => { const active = dataset.name === config.datasetName; return <button key={dataset.id} onClick={() => update("datasetName", dataset.name)} className={`w-full rounded-md border p-4 text-left ${active ? "border-foreground bg-accent" : "hover:bg-accent/60"}`}><div className="flex flex-wrap justify-between gap-2"><span className="break-all font-medium">{dataset.name}</span>{active && <StatusBadge tone="success">Selected</StatusBadge>}</div><p className="mt-1 text-xs text-muted-foreground">{dataset.images.toLocaleString()} images - {dataset.canonicalTask ?? dataset.datasetTask ?? "dataset"} - {dataset.canonicalFormat ?? "source"}</p></button>; })}{datasetsForModel.length === 0 && <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{t("tasks.dataset.empty")}</p>}</CardContent>
+    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Database className="h-5 w-5" />{t('config.title.dataset')}</CardTitle><CardDescription>{t("config.dataset.description")}</CardDescription></CardHeader>
+      <CardContent className="space-y-2">{datasetError && <p className="text-sm text-destructive">{datasetError}</p>}{datasetsForModel.map((dataset) => { const active = dataset.name === config.datasetName; return <button key={dataset.id} onClick={() => update("datasetName", dataset.name)} className={`w-full rounded-md border p-4 text-left ${active ? "border-foreground bg-accent" : "hover:bg-accent/60"}`}><div className="flex flex-wrap justify-between gap-2"><span className="break-all font-medium">{dataset.collectionName || dataset.name}{dataset.version ? ` · v${dataset.version}` : ""}</span>{active && <StatusBadge tone="success">{t('config.selected')}</StatusBadge>}</div><p className="mt-1 text-xs text-muted-foreground">{dataset.images.toLocaleString()} {t('config.images')} - {dataset.canonicalTask ?? dataset.datasetTask ?? "dataset"} - {dataset.canonicalFormat ?? "source"}</p></button>; })}{datasetsForModel.length === 0 && <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{t("tasks.dataset.empty")}</p>}</CardContent>
     </Card>
-    <Card><CardHeader><CardTitle>Run Settings</CardTitle><CardDescription>{t("config.run.description")}</CardDescription></CardHeader>
-      <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3"><div className="space-y-2"><Label>Project name</Label><Input value={config.projectName} onChange={(event) => update("projectName", event.target.value)} /></div><ExecutionSelector value={config.execution} onChange={(execution) => onChange({ ...config, execution, device: execution.mode === 'cpu' ? 'cpu' : '0', deviceSelection: execution.mode === 'auto' ? 'auto' : 'manual' })} />{catalog.common_params.filter((spec) => spec.key !== 'device').map((spec) => <ParamInput key={spec.key} spec={spec} value={commonValue(spec)} onChange={(value) => updateCommon(spec, value)} />)}</CardContent>
+    <Card><CardHeader><CardTitle>{t('config.title.run')}</CardTitle><CardDescription>{t("config.run.description")}</CardDescription></CardHeader>
+      <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3"><div className="space-y-2"><Label htmlFor="task-project-name">{t('config.projectName')}</Label><Input id="task-project-name" value={config.projectName} onChange={(event) => update("projectName", event.target.value)} /></div><ExecutionSelector value={config.execution} onAvailabilityChange={setComputeAvailability} onChange={(execution) => onChange({ ...config, execution, device: execution.mode === 'cpu' ? 'cpu' : '0', deviceSelection: execution.mode === 'auto' ? 'auto' : 'manual' })} />{catalog.common_params.filter((spec) => ['epochs', 'batch_size'].includes(spec.key)).map((spec) => <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={commonValue(spec)} onChange={(value) => updateCommon(spec, value)} />)}</CardContent>
     </Card>
-    <Card><CardHeader><CardTitle>{selectedModel.label} Parameters</CardTitle><CardDescription>{t("config.params.description")}</CardDescription></CardHeader>
-      <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{selectedModel.params.map((spec) => <ParamInput key={spec.key} spec={spec} value={config.params[spec.key] ?? spec.default} onChange={(value) => updateParam(spec.key, value)} />)}</CardContent>
+    <Card><CardHeader><CardTitle>{t('config.title.parameters')}: {selectedModel.label}</CardTitle><CardDescription>{t("config.params.description")}</CardDescription></CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{basicModelParams.map((spec) => <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={config.params[spec.key] ?? spec.default} onChange={(value) => updateParam(spec.key, value)} />)}</div>
+        {(advancedCommonParams.length > 0 || advancedModelParams.length > 0) && <details className="border-t pt-4"><summary className="cursor-pointer text-sm font-medium">{t('config.advanced')}</summary><p className="mt-2 text-xs text-muted-foreground">{t('config.advanced.description')}</p><div className="mt-4 grid gap-5 md:grid-cols-2 lg:grid-cols-3">{advancedCommonParams.map((spec) => <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={commonValue(spec)} onChange={(value) => updateCommon(spec, value)} />)}{advancedModelParams.map((spec) => { const locked = datasetControlsMasks && ['num_classes', 'ignore_index'].includes(spec.key); const value = locked ? (spec.key === 'num_classes' ? Number(labelSchema?.numClasses) : 255) : config.params[spec.key] ?? spec.default; return <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={value} disabled={locked} onChange={(next) => updateParam(spec.key, next)} />; })}</div></details>}
+      </CardContent>
     </Card>
     <Card><CardHeader><div className="flex flex-wrap justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Memory Safety</CardTitle><CardDescription>{t("Helps prevent memory errors before training starts.")}</CardDescription></div><StatusBadge tone={!memory ? "neutral" : memory.ok && memory.warnings.length === 0 ? "success" : "warning"}>{t(memoryStatus)}</StatusBadge></div></CardHeader>
       <CardContent className="space-y-4">
@@ -204,22 +240,26 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
         {memory && (
           <div className={`flex items-start gap-2 rounded-md border p-3 text-sm ${memory.isWithinLimit ? "border-emerald-500/40 bg-emerald-500/10" : "border-amber-500/40 bg-amber-500/10"}`}>
             {memory.isWithinLimit ? <ShieldCheck aria-hidden="true" className="h-5 w-5 shrink-0" /> : <TriangleAlert aria-hidden="true" className="h-5 w-5 shrink-0" />}
-            <p className="min-w-0">
-              {t("config.vram.estimate")
-                .replace("{estimated}", memory.estimatedVramMb.toLocaleString())
-                .replace("{limit}", memory.safeLimitMb.toLocaleString())}
-              {!memory.isWithinLimit && <span className="ml-1 font-medium">{t("config.vram.over")}</span>}
-            </p>
+            <div className="min-w-0">
+              <p>
+                {config.execution.mode === 'cpu' ? t('config.memory.cpu') : t("config.vram.estimate")
+                  .replace("{estimated}", memory.estimatedVramMb.toLocaleString())
+                  .replace("{limit}", memory.safeLimitMb.toLocaleString())}
+                {config.execution.mode !== 'cpu' && !memory.isWithinLimit && <span className="ml-1 font-medium">{t("config.vram.over")}</span>}
+              </p>
+              {config.execution.mode !== 'cpu' && memory.warnings.includes(VRAM_ESTIMATE_WARNING) && <p className="mt-1 text-xs leading-5 text-muted-foreground">{t(VRAM_ESTIMATE_WARNING)}</p>}
+            </div>
           </div>
         )}{memoryMessages.length > 0 && <div className="rounded-md border border-amber-400/40 bg-amber-500/10 p-3 text-sm"><ul className="list-disc space-y-1 pl-5">{memoryMessages.map((item) => <li key={item}>{t(item)}</li>)}</ul></div>}
         {preview && !memory && <Button variant="outline" onClick={() => { setResourcePreview(null); setResourceCheckAttempt((attempt) => attempt + 1); }}><RefreshCw className="h-4 w-4" />{t("config.memory.retryButton")}</Button>}
-        <Button variant="outline" onClick={() => { const next = { ...config, params: { ...config.params } }; for (const [key, value] of Object.entries(selectedModel.safe_defaults ?? {})) { next.params[key] = value; if (key === "batch_size") next.batchSize = Number(value); if (key === "workers") next.workers = Number(value); if (key === "amp") next.amp = Boolean(value); } onChange(next); }}>Apply safe settings</Button></CardContent>
+        <Button variant="outline" onClick={() => { const next = { ...config, params: { ...config.params } }; for (const [key, value] of Object.entries(selectedModel.safe_defaults ?? {})) { next.params[key] = value; if (key === "batch_size") next.batchSize = Number(value); if (key === "workers") next.workers = Number(value); if (key === "amp") next.amp = Boolean(value); } onChange(next); }}>{t('Apply safe settings')}</Button></CardContent>
     </Card>
     <div className="flex flex-col justify-end gap-2 pb-8 sm:flex-row">
+      {trainBlockReason && <p role="status" className="self-center text-sm text-muted-foreground">{t(trainBlockReason)}</p>}
       <Button variant="outline" size="lg" onClick={() => void onSave().catch(() => undefined)} disabled={saveState === "saving" || saveState === "saved"}>
-        {saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save draft
+        {saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{t('config.save.button')}
       </Button>
-      <Button size="lg" onClick={onTrain} disabled={starting || saveState !== "saved" || !config.datasetName || !memory?.ok}>{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}Train</Button>
+      <Button size="lg" onClick={onTrain} disabled={starting || saveState !== "saved" || !config.datasetName || !memory?.ok || !['ready', 'busy'].includes(readiness)}>{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{t('config.train.button')}</Button>
     </div>
   </div>;
 }

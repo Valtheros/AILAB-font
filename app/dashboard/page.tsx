@@ -19,6 +19,7 @@ import {
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { useLanguage } from "@/components/language-provider";
+import { LoadingState } from "@/components/workspace/loading-state";
 import { apiBaseUrl } from "@/lib/api";
 
 const API_URL = apiBaseUrl();
@@ -120,7 +121,7 @@ export default function DashboardPage() {
               {datasetError ? (
                 <p className="text-sm text-muted-foreground">{t("dashboard.recent.datasets.error")}</p>
               ) : datasets === null ? (
-                <p className="text-sm text-muted-foreground">{t("dashboard.recent.loading")}</p>
+                <LoadingState compact icon={Database} title={t("dashboard.recent.loading")} />
               ) : datasets.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{t("dashboard.recent.datasets.empty")}</p>
               ) : (
@@ -154,7 +155,7 @@ export default function DashboardPage() {
               {runError ? (
                 <p className="text-sm text-muted-foreground">{t("dashboard.recent.runs.error")}</p>
               ) : runs === null ? (
-                <p className="text-sm text-muted-foreground">{t("dashboard.recent.loading")}</p>
+                <LoadingState compact icon={Activity} title={t("dashboard.recent.loading")} />
               ) : runs.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{t("dashboard.recent.runs.empty")}</p>
               ) : (

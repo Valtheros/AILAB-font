@@ -1,6 +1,18 @@
 export type ExecutionSelection = { mode: "auto" | "gpu" | "cpu"; gpuUuid?: string | null; needsSelection?: boolean };
 export type ComputeDevice = { uuid: string; name: string; totalMb: number; freeMb: number; status: string; utilization: number; temperature: number; error?: string; draining: boolean };
-export type ComputeJob = { id: string; kind: string; status: string; queueReason?: string; errorCode?: string; error?: string; inputName?: string; inputBytes?: number; assignedGpu?: { uuid: string; name?: string }; requestedExecution: ExecutionSelection };
+export type ComputeAvailability = { status: 'loading' | 'error' | 'ready'; devices: ComputeDevice[]; cpuAvailable: boolean; coordinatorAvailable: boolean };
+export const initialComputeAvailability: ComputeAvailability = { status: 'loading', devices: [], cpuAvailable: false, coordinatorAvailable: false };
+export function executionReadiness(selection: ExecutionSelection, availability: ComputeAvailability): 'loading' | 'unavailable' | 'offline' | 'ready' | 'busy' {
+  if (availability.status === 'loading') return 'loading';
+  if (availability.status === 'error') return 'unavailable';
+  if (!availability.coordinatorAvailable) return 'offline';
+  if (selection.mode === 'cpu') return availability.cpuAvailable ? 'ready' : 'offline';
+  const candidates = availability.devices.filter((device) => selection.mode === 'auto' || device.uuid === selection.gpuUuid);
+  if (candidates.some((device) => device.status === 'ready')) return 'ready';
+  if (candidates.some((device) => device.status === 'busy')) return 'busy';
+  return 'offline';
+}
+export type ComputeJob = { id: string; kind: string; status: string; queueReason?: string; errorCode?: string; error?: string; inputName?: string; inputBytes?: number; assignedGpu?: { uuid: string; name?: string }; requestedExecution: ExecutionSelection; progress?: { current: number; total: number }; expiresAt?: string | null };
 
 const messages: Record<string, [string, string]> = {
   user_quota: ["Your GPU job quota is full", "โควตางาน GPU ของคุณเต็ม กำลังรอให้งานก่อนหน้าจบ"],
@@ -11,7 +23,7 @@ const messages: Record<string, [string, string]> = {
   gpu_memory_busy: ["Waiting for sufficient free GPU memory", "กำลังรอหน่วยความจำ GPU ว่างเพียงพอ"],
   gpu_draining: ["GPU is draining; waiting for the administrator", "GPU หยุดรับงานใหม่ชั่วคราว กำลังรอผู้ดูแล"],
   cpu_busy: ["Waiting for the CPU worker to finish its current job", "กำลังรอ CPU worker ทำงานปัจจุบันให้จบ"],
-  COMPUTE_DISABLED: ["Compute workers are not enabled yet.", "ยังไม่ได้เปิดใช้ compute worker"],
+  COMPUTE_DISABLED: ["Compute workers are unavailable. The task was not started; contact an administrator and retry.", "ระบบ compute ยังไม่พร้อม งานนี้ยังไม่ได้เริ่ม กรุณาติดต่อผู้ดูแลแล้วลองใหม่"],
   COMPUTE_FAILED: ["The job failed. See its log for the cause.", "งานไม่สำเร็จ ดูสาเหตุเพิ่มเติมใน log ของงาน"],
   INVALID_EXECUTION: ["Select Auto GPU, a GPU, or CPU.", "กรุณาเลือก Auto GPU, การ์ด GPU หรือ CPU"],
   GPU_SELECTION_REQUIRED: ["Select the GPU again. Its previous index cannot be identified.", "กรุณาเลือก GPU อีกครั้ง ระบบระบุการ์ดจากเลข index เดิมไม่ได้"],
@@ -20,6 +32,7 @@ const messages: Record<string, [string, string]> = {
   QUEUE_LIMIT: ["Too many pending jobs. Cancel a job or wait for it to finish.", "มีงานรอมากเกินกำหนด กรุณายกเลิกบางงานหรือรอให้งานจบ"],
   RUN_IN_USE: ["Cancel active Train and Test jobs before deleting the run.", "กรุณายกเลิกงาน Train และ Test ที่ยังทำงานก่อนลบ run"],
   INVALID_IMAGE: ["This image cannot be read. Upload a valid image.", "อ่านรูปภาพไม่ได้ กรุณาอัปโหลดไฟล์ภาพที่สมบูรณ์"],
+  INVALID_BATCH: ["The images or ZIP are invalid. Select up to 100 images, at most 10 MiB each and 1 GiB total.", "ชุดภาพหรือ ZIP ไม่ถูกต้อง กรุณาเลือกไม่เกิน 100 รูป รูปละไม่เกิน 10 MiB และรวมไม่เกิน 1 GiB"],
   USER_RESOURCES_DELETING: ["Account resources are being removed. Contact an administrator.", "บัญชีกำลังล้างข้อมูล กรุณาติดต่อผู้ดูแล"],
   worker_offline: ["Worker offline; resources remain reserved", "Worker ขาดการเชื่อมต่อ กำลังตรวจสอบก่อนคืนทรัพยากร"],
   GPU_OOM: ["GPU memory was exhausted. Reduce batch size or image size.", "หน่วยความจำ GPU เต็ม ลองลด batch size หรือขนาดภาพ"],

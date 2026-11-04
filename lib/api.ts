@@ -18,6 +18,9 @@ export function artifactDownloadUrl(
   projectName: string,
   filePath: string,
 ) {
+  if (filePath.toLowerCase().endsWith(".log")) {
+    return `${apiUrl}/api/runs/${encodeURIComponent(projectName)}/files?${new URLSearchParams({ path: filePath })}`;
+  }
   const encodedPath = filePath
     .split("/")
     .map((segment) => encodeURIComponent(segment))

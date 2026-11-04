@@ -20,7 +20,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiBaseUrl } from "@/lib/api";
-import { InsightList, type Insight } from "@/components/tasks/insight-list";
 import { useLanguage } from "@/components/language-provider";
 
 const API_URL = apiBaseUrl();
@@ -35,6 +34,7 @@ interface CompareRun {
   runId: string;
   runSlug: string | null;
   displayName: string;
+  createdAt?: string | null;
   taskType: string;
   modelType: string | null;
   architecture: string;
@@ -55,7 +55,6 @@ interface CompareResponse {
   runs: CompareRun[];
   sharedMetric: { key: string; label: string; direction: string } | null;
   warnings: string[];
-  insights: Insight[];
 }
 
 /** Turn per-run series into the row-per-epoch shape Recharts expects. */
@@ -100,7 +99,7 @@ export function CompareRunsDialog({
   datasetSlug: string;
   runIds: string[];
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const requestKey = JSON.stringify([datasetSlug, runIds, t("compare.error.failed")]);
   const [response, setResponse] = useState<{ key: string; data: CompareResponse | null; error: string } | null>(null);
   const current = response?.key === requestKey ? response : null;
@@ -132,6 +131,12 @@ export function CompareRunsDialog({
 
   const rows = data ? toChartRows(data.runs) : [];
   const metricLabel = data?.sharedMetric?.label ?? t("compare.metric.mixed");
+  const runLabel = (run: CompareRun) => {
+    if (!data || data.runs.filter((other) => other.displayName === run.displayName).length < 2) return run.displayName;
+    const date = run.createdAt ? new Date(run.createdAt) : null;
+    const time = date && !Number.isNaN(date.getTime()) ? date.toLocaleString(language === 'th' ? 'th-TH' : 'en-US') : '';
+    return `${run.displayName} (${[time, run.runId.slice(0, 8)].filter(Boolean).join(' - ')})`;
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -201,7 +206,7 @@ export function CompareRunsDialog({
                             key={`train_${index}`}
                             type="monotone"
                             dataKey={`train_${index}`}
-                            name={`${run.displayName} · train`}
+                            name={`${runLabel(run)} · train`}
                             stroke={colour}
                             strokeWidth={2}
                             dot={false}
@@ -220,7 +225,7 @@ export function CompareRunsDialog({
                             key={`val_${index}`}
                             type="monotone"
                             dataKey={`val_${index}`}
-                            name={`${run.displayName} · val`}
+                            name={`${runLabel(run)} · val`}
                             stroke={colour}
                             strokeWidth={2}
                             strokeDasharray="5 4"
@@ -264,7 +269,7 @@ export function CompareRunsDialog({
                             className="h-3 w-3 shrink-0 rounded-sm"
                             style={{ backgroundColor: COLOURS[index % COLOURS.length] }}
                           />
-                          <span className="break-all font-medium">{run.displayName}</span>
+                          <span className="break-words font-medium">{runLabel(run)}</span>
                         </span>
                       </td>
                       <td className="p-3 break-all">{run.architecture || run.modelType || "-"}</td>
@@ -288,9 +293,6 @@ export function CompareRunsDialog({
             </div>
           )}
 
-          {data && data.insights?.length > 0 && (
-            <InsightList insights={data.insights} titleKey="insight.section.compareTitle" />
-          )}
         </div>
       </DialogContent>
     </Dialog>

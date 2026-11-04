@@ -36,6 +36,7 @@ import {
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { I18nText } from "@/components/i18n-text";
+import { ModelApiGuide } from "@/components/guide/model-api-guide";
 
 type TreeKind = "folder" | "image" | "file";
 
@@ -545,7 +546,7 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
                 </div>
               </CardContent>
             </Card>
-
+            <ModelApiGuide />
           </TabsContent>
 
           <TabsContent value="models">
