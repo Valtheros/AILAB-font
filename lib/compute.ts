@@ -15,6 +15,10 @@ export function executionReadiness(selection: ExecutionSelection, availability: 
 export type ComputeJob = { id: string; kind: string; status: string; queueReason?: string; errorCode?: string; error?: string; inputName?: string; inputBytes?: number; assignedGpu?: { uuid: string; name?: string }; requestedExecution: ExecutionSelection; progress?: { current: number; total: number }; expiresAt?: string | null };
 
 const messages: Record<string, [string, string]> = {
+  STORAGE_QUOTA_EXCEEDED: ["Storage is full or insufficient for this job. Remove unused files or ask an administrator to increase your quota.", "พื้นที่ไม่พอสำหรับงานนี้ กรุณาลบไฟล์ที่ไม่ใช้หรือติดต่อผู้ดูแลเพื่อเพิ่มโควตา"],
+  STORAGE_DISK_FULL: ["The server needs free disk space before accepting more work. Contact an administrator.", "พื้นที่ว่างของเซิร์ฟเวอร์ไม่พอรับงานเพิ่ม กรุณาติดต่อผู้ดูแล"],
+  STORAGE_UNAVAILABLE: ["Storage accounting is temporarily unavailable. Your saved data has not been removed. Please retry.", "ระบบตรวจพื้นที่ยังไม่พร้อม ข้อมูลที่บันทึกไว้ไม่ได้ถูกลบ กรุณาลองใหม่"],
+  STORAGE_IN_USE: ["Files are still being written or transferred. Wait for that work to finish, then retry.", "ยังมีงานเขียนหรือโอนย้ายไฟล์อยู่ กรุณารอให้งานเสร็จแล้วลองใหม่"],
   user_quota: ["Your GPU job quota is full", "โควตางาน GPU ของคุณเต็ม กำลังรอให้งานก่อนหน้าจบ"],
   node_resources: ["Waiting for host RAM or CPU capacity", "กำลังรอ RAM หรือ CPU ของเครื่องให้เพียงพอ"],
   gpu_busy_or_offline: ["Waiting for an available GPU worker", "กำลังรอการ์ดหรือ worker ที่พร้อมทำงาน"],

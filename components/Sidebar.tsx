@@ -10,12 +10,14 @@ import {
   Menu,
   UserRound,
   ShieldCheck,
+  HardDrive,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
+import { useLanguage } from "@/components/language-provider";
 
 const navItems = [
   { title: "Annotation", href: "/annotate", icon: Tags },
@@ -55,8 +57,10 @@ interface SidebarProps {
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = authClient.useSession();
+  const { language } = useLanguage();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
-  const visibleNavItems = isAdmin ? [...navItems, adminNavItem, { title: 'Compute', href: '/admin/compute', icon: ShieldCheck }] : navItems;
+  const visibleNavItems = isAdmin ? [...navItems, adminNavItem, { title: 'Compute', href: '/admin/compute', icon: ShieldCheck },
+    { title: language === 'th' ? 'พื้นที่ผู้ใช้' : 'User storage', href: '/admin/storage', icon: HardDrive }] : navItems;
 
   // Close mobile sidebar when route changes
   useEffect(() => {

@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { I18nText } from "@/components/i18n-text";
 import { getCurrentSession } from "@/lib/session";
+import { StorageUsage } from "@/components/storage-usage";
 
 export default async function AccountPage() {
   const session = await getCurrentSession();
@@ -50,6 +51,7 @@ export default async function AccountPage() {
             </div>
           </CardContent>
         </Card>
+        <StorageUsage />
         <ChangePasswordForm />
       </div>
     </MainLayout>
