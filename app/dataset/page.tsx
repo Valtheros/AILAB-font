@@ -66,7 +66,7 @@ interface ExportCacheEntry {
 
 interface AnnotationStats {
   images?: number;
-  classes?: number;
+  classes?: number | null;
   yolo_boxes?: number;
   yolo_polygons?: number;
   coco_boxes?: number;
@@ -78,6 +78,7 @@ interface ImportProfile {
   tasks: string[];
   formats: string[];
   classes: string[];
+  classes_known?: boolean;
   image_count: number;
   source_format: string;
   dataset_task?: string;
@@ -102,6 +103,7 @@ interface Dataset {
   version?: number | null;
   images: number;
   classes: string[];
+  classesKnown?: boolean;
   createdAt: string;
   size: string;
   tasks: string[];
@@ -128,7 +130,7 @@ interface DatasetTagPreference {
 const DATASET_TAGS_STORAGE_KEY = "ailab.dataset-display-tags.v1";
 
 function datasetClassNames(dataset: Dataset) {
-  return dataset.classes.filter((className) => !/^\d+$/.test(className.trim()));
+  return dataset.classes;
 }
 
 const API_URL = apiBaseUrl();
@@ -469,6 +471,8 @@ export default function DatasetPage() {
     }
   };
 
+  const jsonError = uploadStatus === 'error' ? uploadMessage.match(/Could not read COCO annotation file '([^']+)'\. Check that the JSON is valid:/) : null;
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -587,8 +591,9 @@ export default function DatasetPage() {
                       <AlertCircle className="mb-4 h-10 w-10 text-red-500" />
                       <StatusBadge tone="danger">{t("dataset.upload.failed")}</StatusBadge>
                       <p role="alert" className="mt-3 max-h-40 max-w-lg overflow-y-auto whitespace-pre-wrap break-words px-1 text-sm font-medium leading-relaxed sm:text-base">
-                        {uploadMessage}
+                        {jsonError ? (language === 'th' ? `ไฟล์ ${jsonError[1]} ไม่ใช่ JSON ที่ถูกต้อง กรุณาตรวจสอบไฟล์ annotation แล้วลองใหม่` : `The annotation file ${jsonError[1]} is not valid JSON. Check the file and try again.`) : uploadMessage}
                       </p>
+                      {jsonError && <details className="mt-2 max-w-lg text-left text-xs text-muted-foreground" onClick={(event) => event.stopPropagation()}><summary className="cursor-pointer">{language === 'th' ? 'รายละเอียดทางเทคนิค' : 'Technical details'}</summary><p className="mt-2 break-words">{uploadMessage}</p></details>}
                       <Button
                         variant="outline"
                         size="sm"
@@ -664,9 +669,12 @@ export default function DatasetPage() {
                   </div>
                   <div className="grid gap-2 sm:grid-cols-3">
                     <StatusBadge>{importPreview.profile.image_count.toLocaleString()} images</StatusBadge>
-                    <StatusBadge>{importPreview.profile.classes.length} classes</StatusBadge>
+                    <StatusBadge>{importPreview.profile.classes_known === false
+                      ? (language === "th" ? "ยังไม่ทราบจำนวนคลาส" : "Class count not yet known")
+                      : `${importPreview.profile.classes.length} ${language === "th" ? "คลาส" : "classes"}`}</StatusBadge>
                     <StatusBadge>{importPreview.profile.ready_models?.length ?? 0} ready models</StatusBadge>
                   </div>
+                  {importPreview.profile.normalized_formats.includes("semantic_masks") && <p className="text-xs text-muted-foreground">{language === "th" ? "จำนวนคลาสไม่นับพื้นหลัง สำหรับการฝึก Mask classes ต้องรวมพื้นหลังด้วย" : "Class count excludes background. Include background when setting Mask classes for training."}</p>}
                   <div className="space-y-2">
                     <p className="text-xs font-medium uppercase text-muted-foreground">Compatible models</p>
                     <div className="flex flex-wrap gap-2">
@@ -696,7 +704,7 @@ export default function DatasetPage() {
                           <option key={id} value={id}>{language === "th" ? "เวอร์ชันใหม่ของ" : "New version of"} {name} ({id.slice(0, 8)})</option>
                         ))}
                     </select>
-                    <p className="text-xs text-muted-foreground">{language === "th" ? "ข้อมูลเวอร์ชันเดิมจะยังคงอยู่" : "Existing dataset versions are preserved."}</p>
+                    <p className="text-xs text-muted-foreground">{language === "th" ? "ข้อมูลเวอร์ชันเดิมยังคงอยู่ เลขเวอร์ชันที่จองแล้วอาจข้ามได้เมื่อยกเลิก" : "Existing versions are preserved. Version numbers reserved by cancelled imports may be skipped."}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={importFile} disabled={isUploading || !pendingFile || !pendingUploadToken}>
@@ -788,7 +796,7 @@ export default function DatasetPage() {
                         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                           <span>{dataset.images.toLocaleString()} images</span>
                           <span>{dataset.size}</span>
-                          <span>{dataset.createdAt}</span>
+                          <span>{new Date(dataset.createdAt).toLocaleString(language === "th" ? "th-TH" : "en-US")}</span>
                         </div>
                         <div className="mt-3 flex items-center gap-2">
                           <p className="text-xs font-medium uppercase text-muted-foreground">Display tags</p>
@@ -815,6 +823,7 @@ export default function DatasetPage() {
                               {displayModelTags(dataset, tagPreferences[dataset.id]).length === 0 && <span className="text-xs text-muted-foreground">No model tags</span>}
                             </div>
                           </div>
+                          {dataset.classesKnown === false && <p className="text-xs text-muted-foreground">{language === "th" ? "ยังไม่ทราบจำนวนคลาส" : "Class count not yet known"}</p>}
                           {dataset.classes?.length > 0 && (
                             <div>
                               <p className="text-xs font-medium text-muted-foreground">Classes ({datasetClassNames(dataset).length})</p>

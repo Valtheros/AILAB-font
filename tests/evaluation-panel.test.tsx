@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { EvaluationPanel } from '@/components/tasks/evaluation-panel';
 
@@ -54,4 +54,39 @@ test('translates evaluation and image statuses in Thai', async () => {
   render(<EvaluationPanel runSlug="run" modelType="resnet" taskType="image_classification" />);
   expect(await screen.findByText('สถานะ: สำเร็จ')).toBeTruthy();
   expect(await screen.findByText('ทำนายผิด')).toBeTruthy();
+});
+
+test('notification opens its evaluation and never falls back to a newer one', async () => {
+  const older = { id: 'old', jobId: 'job-old', status: 'no_test', datasetName: 'Old', createdAt: '2026-01-01T00:00:00Z' };
+  const newer = { id: 'new', jobId: 'job-new', status: 'failed', datasetName: 'New', createdAt: '2026-01-02T00:00:00Z', error: 'Newer failed' };
+  fetchMock.mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/evaluations')) return response({ evaluations: [newer, older] });
+    if (url.endsWith('/datasets')) return response({ datasets: [] });
+    return response(url.endsWith('/old') ? older : newer);
+  });
+  const view = render(<EvaluationPanel runSlug="run" modelType="resnet" taskType="image_classification" initialJobId="job-old" />);
+  expect(await screen.findByText('This dataset version has no test split.')).toBeTruthy();
+  expect(screen.queryByText('Newer failed')).toBeNull();
+  view.unmount();
+  render(<EvaluationPanel runSlug="run" modelType="resnet" taskType="image_classification" initialJobId="missing" />);
+  expect(await screen.findByText('The evaluation in this notification is no longer available.')).toBeTruthy();
+  expect(screen.queryByText('Newer failed')).toBeNull();
+});
+
+test('a successful retry clears an image loading error', async () => {
+  const evaluation = { id: 'eval-1', status: 'completed', datasetName: 'Roads', createdAt: '2026-01-01T00:00:00Z' };
+  let attempts = 0;
+  fetchMock.mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/evaluations')) return response({ evaluations: [evaluation] });
+    if (url.endsWith('/datasets')) return response({ datasets: [] });
+    if (url.includes('/images?')) return ++attempts === 1 ? new Response('', { status: 500 }) : response({ total: 1, images: [{ ordinal: 0, filename: 'ok.png', outcome: 'correct' }] });
+    return response(evaluation);
+  });
+  render(<EvaluationPanel runSlug="run" modelType="resnet" taskType="image_classification" />);
+  expect(await screen.findByText('Could not load images.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByRole('button', { name: /ok.png/ })).toBeTruthy();
+  await waitFor(() => expect(screen.queryByText('Could not load images.')).toBeNull());
 });

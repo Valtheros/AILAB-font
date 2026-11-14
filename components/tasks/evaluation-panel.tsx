@@ -19,7 +19,7 @@ type Dataset = { id: string; name: string; collectionName?: string | null; versi
 type ClassMetrics = { name: string; support?: number; pixels?: number; precision?: number | null; recall?: number | null; f1?: number | null; iou?: number | null; dice?: number | null; ap50?: number | null; ap?: number | null };
 type Metrics = { accuracy?: number | null; pixelAccuracy?: number | null; meanIoU?: number | null; map?: number | null; map50?: number | null; classes?: ClassMetrics[]; boxes?: Metrics; masks?: Metrics };
 type Report = { status: string; metrics?: Metrics | null; evaluated: number; skipped: number; sourceVerified?: boolean; checkpointSha256?: string; datasetContentSha256?: string | null; classMapping?: Record<string, string | number> };
-type Evaluation = { id: string; status: string; origin: string; datasetName: string; datasetVersion?: number | null; error?: string | null; report?: Report; createdAt: string };
+type Evaluation = { id: string; jobId?: string | null; status: string; origin: string; datasetName: string; datasetVersion?: number | null; error?: string | null; report?: Report; createdAt: string };
 type ImageSummary = { ordinal: number; filename: string; outcome: string; score?: number | null; fp_count: number; fn_count: number };
 type Box = { bbox: number[]; category_id: number; score?: number };
 type ImageDetail = { actual?: string | Box[]; predicted?: string; predictions?: Box[]; confidence?: number; width?: number; height?: number; actualMask?: string; predictedMask?: string; error?: string };
@@ -110,7 +110,7 @@ function ImageReview({ evaluationId, summary, detail, classes, thai }: { evaluat
   </div>;
 }
 
-export function EvaluationPanel({ runSlug, modelType, taskType }: { runSlug: string; modelType: string; taskType: string }) {
+export function EvaluationPanel({ runSlug, modelType, taskType, initialJobId }: { runSlug: string; modelType: string; taskType: string; initialJobId?: string | null }) {
   const { language } = useLanguage(); const thai = language === "th";
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]), [selected, setSelected] = useState("");
   const [current, setCurrent] = useState<Evaluation | null>(null), [datasets, setDatasets] = useState<Dataset[]>([]), [dataset, setDataset] = useState("");
@@ -118,13 +118,19 @@ export function EvaluationPanel({ runSlug, modelType, taskType }: { runSlug: str
   const [filter, setFilter] = useState("all"), [offset, setOffset] = useState(0), [images, setImages] = useState<ImageSummary[]>([]), [total, setTotal] = useState(0);
   const [image, setImage] = useState<ImageSummary | null>(null), [detail, setDetail] = useState<ImageDetail | null>(null);
   const [error, setError] = useState(""), [submitting, setSubmitting] = useState(false);
+  const [imageListError, setImageListError] = useState("");
+  const [imageListAttempt, setImageListAttempt] = useState(0);
+  const [followingLink, setFollowingLink] = useState(Boolean(initialJobId));
+  const [linkedUnavailable, setLinkedUnavailable] = useState(false);
   const key = useRef<string | null>(null);
   const imageRequest = useRef(0);
 
   const applyEvaluations = useCallback((data: Evaluation[]) => {
     setEvaluations(data);
-    setSelected((previous) => previous || data[0]?.id || "");
-  }, []);
+    const linked = initialJobId ? data.find((item) => item.jobId === initialJobId) : undefined;
+    setLinkedUnavailable(Boolean(followingLink && initialJobId && !linked));
+    setSelected((previous) => followingLink ? (linked?.id ?? "") : (data.some((item) => item.id === previous) ? previous : data[0]?.id ?? ""));
+  }, [followingLink, initialJobId]);
   const refresh = useCallback(async () => {
     applyEvaluations(await loadEvaluations(runSlug, thai));
   }, [applyEvaluations, runSlug, thai]);
@@ -152,21 +158,21 @@ export function EvaluationPanel({ runSlug, modelType, taskType }: { runSlug: str
     return () => controller.abort();
   }, [modelType]);
   useEffect(() => {
-    if (!selected) return;
+    if (!selected) { setCurrent(null); setImages([]); setImage(null); return; }
     const controller = new AbortController();
-    fetch(`${API}/api/evaluations/${selected}`, { signal: controller.signal }).then((response) => response.ok ? response.json() : Promise.reject()).then(setCurrent).catch(() => { if (!controller.signal.aborted) setError(thai ? "โหลดรายละเอียดไม่สำเร็จ" : "Could not load evaluation details."); });
+    fetch(`${API}/api/evaluations/${selected}`, { signal: controller.signal }).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => { if (!controller.signal.aborted) setCurrent(data); }).catch(() => { if (!controller.signal.aborted) setError(thai ? "โหลดรายละเอียดไม่สำเร็จ" : "Could not load evaluation details."); });
     return () => controller.abort();
   }, [selected, evaluations, thai]);
   useEffect(() => {
-    if (!selected || !["completed", "partial"].includes(current?.status ?? "")) return;
+    if (!selected || current?.id !== selected || !["completed", "partial"].includes(current.status)) return;
     const controller = new AbortController();
     const query = new URLSearchParams({ outcome: filter, offset: String(offset), limit: "48", sort: taskType === "segmentation" && modelType === "deeplabv3plus" ? "score" : "ordinal" });
-    fetch(`${API}/api/evaluations/${selected}/images?${query}`, { signal: controller.signal }).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => { setImages(data.images); setTotal(data.total); }).catch(() => { if (!controller.signal.aborted) setError(thai ? "โหลดรายการภาพไม่สำเร็จ" : "Could not load images."); });
+    fetch(`${API}/api/evaluations/${selected}/images?${query}`, { signal: controller.signal }).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => { if (!controller.signal.aborted) { setImages(data.images); setTotal(data.total); setImageListError(''); } }).catch(() => { if (!controller.signal.aborted) { setImages([]); setTotal(0); setImageListError(thai ? "โหลดรายการภาพไม่สำเร็จ" : "Could not load images."); } });
     return () => controller.abort();
-  }, [selected, current?.status, filter, offset, taskType, modelType, thai]);
+  }, [selected, current?.id, current?.status, filter, offset, taskType, modelType, thai, imageListAttempt]);
   const inspect = async (item: ImageSummary) => {
     const request = ++imageRequest.current;
-    setImage(item); setDetail(null);
+    setImage(item); setDetail(null); setError('');
     try { const response = await fetch(`${API}/api/evaluations/${selected}/images/${item.ordinal}`); if (!response.ok) throw new Error(); const result = await response.json(); if (request === imageRequest.current) setDetail(result); }
     catch { if (request === imageRequest.current) setError(thai ? "โหลดภาพประเมินไม่สำเร็จ" : "Could not load the image result."); }
   };
@@ -177,7 +183,8 @@ export function EvaluationPanel({ runSlug, modelType, taskType }: { runSlug: str
       key.current ??= Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
       const response = await fetch(`${API}/api/runs/${encodeURIComponent(runSlug)}/evaluations`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key.current }, body: JSON.stringify({ datasetVersionId: dataset, execution }) });
       const data = await response.json(); if (!response.ok) throw new Error(data.detail || (thai ? "ส่งงานไม่สำเร็จ" : "Could not start evaluation."));
-      key.current = null; setSelected(data.id); await refresh();
+      key.current = null; setFollowingLink(false); setLinkedUnavailable(false); setSelected(data.id); setCurrent(null);
+      setEvaluations(await loadEvaluations(runSlug, thai));
     } catch (caught) { setError(caught instanceof Error ? caught.message : (thai ? "ส่งงานไม่สำเร็จ" : "Could not start evaluation.")); }
     finally { setSubmitting(false); }
   };
@@ -186,8 +193,10 @@ export function EvaluationPanel({ runSlug, modelType, taskType }: { runSlug: str
     <div className="grid gap-3 md:grid-cols-2"><div className="space-y-2"><label htmlFor="evaluation-dataset" className="text-sm font-medium">{thai ? "ชุดข้อมูลเวอร์ชันที่ต้องการประเมิน" : "Dataset version"}</label><Select value={dataset} onValueChange={(value) => { setDataset(value); key.current = null; }}><SelectTrigger id="evaluation-dataset"><SelectValue placeholder={thai ? "เลือกชุดข้อมูล" : "Select a dataset"} /></SelectTrigger><SelectContent>{datasets.map((item) => <SelectItem key={item.id} value={item.id}>{item.collectionName || item.name}{item.version ? ` v${item.version}` : ""}</SelectItem>)}</SelectContent></Select></div><ExecutionSelector value={execution} onChange={(value) => { setExecution(value); key.current = null; }} disabled={submitting} /></div>
     <Button onClick={submit} disabled={!dataset || submitting}><Target className="h-4 w-4" />{thai ? "เริ่มประเมิน" : "Evaluate"}</Button>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    {evaluations.length > 0 && <div className="space-y-2 border-t pt-4"><label htmlFor="evaluation-select" className="text-sm font-medium">{thai ? "ผลประเมิน" : "Evaluations"}</label><Select value={selected} onValueChange={(value) => { imageRequest.current += 1; setSelected(value); setCurrent(null); setImages([]); setImage(null); setOffset(0); setFilter("all"); }}><SelectTrigger id="evaluation-select"><SelectValue /></SelectTrigger><SelectContent>{evaluations.map((item) => <SelectItem key={item.id} value={item.id}>{item.datasetName}{item.datasetVersion ? ` v${item.datasetVersion}` : ""} · {new Date(item.createdAt).toLocaleString(thai ? "th-TH" : "en-US")} · {statusLabel(item.status, thai)}</SelectItem>)}</SelectContent></Select></div>}
-    {current && <div className="space-y-3"><div className="flex flex-wrap items-center gap-3 text-sm"><span role="status">{thai ? "สถานะ" : "Status"}: {statusLabel(current.status, thai)}</span>{ACTIVE.has(current.status) ? <Button variant="outline" size="sm" onClick={async () => { const response = await fetch(`${API}/api/evaluations/${current.id}/cancel`, { method: "POST" }); if (response.ok) await refresh(); else setError(thai ? "ยกเลิกไม่สำเร็จ" : "Could not cancel evaluation."); }}><X className="h-4 w-4" />{thai ? "ยกเลิก" : "Cancel"}</Button> : <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" size="icon" title={thai ? "ลบผลประเมิน" : "Delete evaluation"} aria-label={thai ? "ลบผลประเมิน" : "Delete evaluation"}><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{thai ? "ลบผลประเมินนี้?" : "Delete this evaluation?"}</AlertDialogTitle><AlertDialogDescription>{thai ? "ผลประเมินและรายละเอียดภาพจะถูกลบ โดยไม่กระทบโมเดลหรือ dataset" : "The result and image details will be removed. The model and dataset will not be changed."}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{thai ? "ยกเลิก" : "Cancel"}</AlertDialogCancel><AlertDialogAction onClick={async () => { try { const response = await fetch(`${API}/api/evaluations/${current.id}`, { method: "DELETE" }); if (!response.ok) throw new Error(); setSelected(""); setCurrent(null); setImage(null); await refresh(); } catch { setError(thai ? "ลบผลประเมินไม่สำเร็จ" : "Could not delete the evaluation."); } }}>{thai ? "ลบ" : "Delete"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}</div>
+    {imageListError && <div className="flex items-center gap-2"><p role="alert" className="text-sm text-destructive">{imageListError}</p><Button variant="outline" size="sm" onClick={() => setImageListAttempt((value) => value + 1)}>{thai ? "ลองใหม่" : "Retry"}</Button></div>}
+    {linkedUnavailable && <p role="alert" className="text-sm text-destructive">{thai ? "ไม่พบผลประเมินที่แจ้งเตือน อาจถูกลบแล้ว" : "The evaluation in this notification is no longer available."}</p>}
+    {evaluations.length > 0 && <div className="space-y-2 border-t pt-4"><label htmlFor="evaluation-select" className="text-sm font-medium">{thai ? "ผลประเมิน" : "Evaluations"}</label><Select value={selected} onValueChange={(value) => { imageRequest.current += 1; setFollowingLink(false); setLinkedUnavailable(false); setImageListError(''); setError(''); setSelected(value); setCurrent(null); setImages([]); setImage(null); setOffset(0); setFilter("all"); }}><SelectTrigger id="evaluation-select"><SelectValue /></SelectTrigger><SelectContent>{evaluations.map((item) => <SelectItem key={item.id} value={item.id}>{item.datasetName}{item.datasetVersion ? ` v${item.datasetVersion}` : ""} · {new Date(item.createdAt).toLocaleString(thai ? "th-TH" : "en-US")} · {statusLabel(item.status, thai)}</SelectItem>)}</SelectContent></Select></div>}
+    {current && current.id === selected && <div className="space-y-3"><div className="flex flex-wrap items-center gap-3 text-sm"><span role="status">{thai ? "สถานะ" : "Status"}: {statusLabel(current.status, thai)}</span>{ACTIVE.has(current.status) ? <Button variant="outline" size="sm" onClick={async () => { const response = await fetch(`${API}/api/evaluations/${current.id}/cancel`, { method: "POST" }); if (response.ok) await refresh(); else setError(thai ? "ยกเลิกไม่สำเร็จ" : "Could not cancel evaluation."); }}><X className="h-4 w-4" />{thai ? "ยกเลิก" : "Cancel"}</Button> : <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" size="icon" title={thai ? "ลบผลประเมิน" : "Delete evaluation"} aria-label={thai ? "ลบผลประเมิน" : "Delete evaluation"}><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{thai ? "ลบผลประเมินนี้?" : "Delete this evaluation?"}</AlertDialogTitle><AlertDialogDescription>{thai ? "ผลประเมินและรายละเอียดภาพจะถูกลบ โดยไม่กระทบโมเดลหรือ dataset" : "The result and image details will be removed. The model and dataset will not be changed."}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{thai ? "ยกเลิก" : "Cancel"}</AlertDialogCancel><AlertDialogAction onClick={async () => { try { const response = await fetch(`${API}/api/evaluations/${current.id}`, { method: "DELETE" }); if (!response.ok) throw new Error(); const remaining = await loadEvaluations(runSlug, thai); setFollowingLink(false); setLinkedUnavailable(false); setEvaluations(remaining); setSelected(remaining[0]?.id ?? ""); setCurrent(null); setImage(null); } catch { setError(thai ? "ลบผลประเมินไม่สำเร็จ" : "Could not delete the evaluation."); } }}>{thai ? "ลบ" : "Delete"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}</div>
       {current.error && <p className="text-sm text-destructive">{current.error}</p>}
       {current.status === "no_test" && <p className="text-sm text-muted-foreground">{thai ? "ไม่มีชุดทดสอบใน dataset เวอร์ชันนี้" : "This dataset version has no test split."}</p>}
       {current.report && <p className="text-sm text-muted-foreground">{thai ? "ประเมิน" : "Evaluated"}: {current.report.evaluated} · {thai ? "ข้าม" : "Skipped"}: {current.report.skipped}{!current.report.sourceVerified && ` · ${thai ? "ไม่ยืนยันเนื้อหาชุดข้อมูลย้อนหลัง" : "Dataset contents were not historically verified"}`}</p>}

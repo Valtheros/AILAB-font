@@ -106,3 +106,32 @@ test('hides the previous split while the next split loads', async () => {
   resolveTest(response({ total: 1, images: [{ ordinal: 1, filename: 'test.jpg', split: 'test', classes: [], hasObjects: true }] }));
   expect(await screen.findByRole('button', { name: /test.jpg/ })).toBeTruthy();
 });
+
+test.each(['en', 'th'])('boxes and object swatches use the class legend colors in %s', async (language) => {
+  testLanguage.value = language;
+  const details = { name: 'Roads', index: { status: 'completed', ready: true, total: 1, processed: 1, skipped: 0, stats: {} } };
+  fetchMock.mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.includes('/images?')) return response({ total: 1, images: [{ ordinal: 0, filename: 'a.jpg', split: 'train', classes: [], hasObjects: true }] });
+    if (url.includes('/duplicates?')) return response({ groups: [], total: 0 });
+    if (url.endsWith('/images/0')) return response({ ordinal: 0, filename: 'a.jpg', split: 'train', width: 10, height: 10, annotations: {
+      kind: 'objects', classes: [{ id: 1, name: 'red' }, { id: 2, name: 'blue' }], objects: [
+        { className: 'blue', classId: 2, bbox: [0, 0, 2, 2] }, { className: 'red', classId: 1, bbox: [2, 2, 2, 2] },
+      ],
+    } });
+    return response(details);
+  });
+  render(<DatasetDetailsPage />);
+  fireEvent.click(await screen.findByRole('button', { name: /a.jpg/ }));
+  const dialog = screen.getByRole('dialog');
+  const boxes = await waitFor(() => {
+    const found = dialog.querySelectorAll('rect');
+    expect(found.length).toBe(2);
+    return found;
+  });
+  expect(boxes[0].getAttribute('stroke')).toBe('#38bdf8');
+  expect(boxes[1].getAttribute('stroke')).toBe('#f87171');
+  const swatches = dialog.querySelectorAll('li span');
+  expect((swatches[0] as HTMLElement).style.backgroundColor).toBe('rgb(56, 189, 248)');
+  expect((swatches[1] as HTMLElement).style.backgroundColor).toBe('rgb(248, 113, 113)');
+});

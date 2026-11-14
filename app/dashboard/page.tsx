@@ -44,6 +44,7 @@ interface Dataset {
   name: string;
   images: number;
   classes: string[];
+  classesKnown?: boolean;
   size: string;
   createdAt: string;
 }
@@ -84,7 +85,7 @@ export default function DashboardPage() {
       })
       .then((data: { datasets?: Dataset[] }) =>
         setDatasets(
-          [...(data.datasets ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+          [...(data.datasets ?? [])].sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0) || a.id.localeCompare(b.id)),
         ),
       )
       .catch(() => setDatasetError(true));
@@ -132,7 +133,7 @@ export default function DashboardPage() {
                       <span className="shrink-0 text-xs text-muted-foreground">{dataset.size}</span>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {dataset.images.toLocaleString()} {t("dashboard.recent.images")} · {dataset.classes.length} {t("dashboard.recent.classes")} · {dataset.createdAt}
+                      {dataset.images.toLocaleString()} {t("dashboard.recent.images")} · {dataset.classesKnown === false ? (language === "th" ? "ยังไม่ทราบจำนวนคลาส" : "Class count not yet known") : `${dataset.classes.length} ${t("dashboard.recent.classes")}`} · {formatDate(dataset.createdAt, language === "th" ? "th-TH" : "en-US")}
                     </p>
                   </div>
                 ))

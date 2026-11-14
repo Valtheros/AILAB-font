@@ -25,7 +25,7 @@ type BatchItem = {
 };
 type BatchResult = { total: number; succeeded: number; failed: number; images: BatchItem[] };
 
-export function BatchTest({ runSlug }: { runSlug: string }) {
+export function BatchTest({ runSlug, initialJobId }: { runSlug: string; initialJobId?: string | null }) {
   const { language } = useLanguage();
   const thai = language === "th";
   const [execution, setExecution] = useState<ExecutionSelection>({ mode: "auto" });
@@ -33,6 +33,7 @@ export function BatchTest({ runSlug }: { runSlug: string }) {
   const [job, setJob] = useState<ComputeJob | null>(null);
   const [result, setResult] = useState<BatchResult | null>(null);
   const [error, setError] = useState("");
+  const [lookupError, setLookupError] = useState<"unavailable" | "connection" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const generation = useRef(0);
   const requestKey = useRef<string | null>(null);
@@ -42,16 +43,19 @@ export function BatchTest({ runSlug }: { runSlug: string }) {
   useEffect(() => {
     const controller = new AbortController();
     const version = generation.current;
-    fetch(`${API_URL}/api/compute/jobs?runSlug=${encodeURIComponent(runSlug)}&kind=batch_predict`, { signal: controller.signal })
-      .then((response) => response.ok ? response.json() : null)
+    const jobQuery = initialJobId ? `&jobId=${encodeURIComponent(initialJobId)}` : '';
+    fetch(`${API_URL}/api/compute/jobs?runSlug=${encodeURIComponent(runSlug)}&kind=batch_predict${jobQuery}`, { signal: controller.signal })
+      .then((response) => { if (!response.ok) throw new Error('lookup failed'); return response.json(); })
       .then((data) => {
         if (!controller.signal.aborted && generation.current === version && data?.job) {
           setJob(data.job);
           if (!executionEdited.current) setExecution(data.job.requestedExecution);
+        } else if (!controller.signal.aborted && generation.current === version && initialJobId) {
+          setLookupError('unavailable');
         }
-      }).catch(() => undefined);
+      }).catch(() => { if (!controller.signal.aborted && generation.current === version) setLookupError('connection'); });
     return () => { controller.abort(); generation.current += 1; };
-  }, [runSlug]);
+  }, [runSlug, initialJobId]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -119,6 +123,7 @@ export function BatchTest({ runSlug }: { runSlug: string }) {
     setJob(null);
     setResult(null);
     setError("");
+    setLookupError(null);
   };
 
   const submit = async () => {
@@ -171,6 +176,7 @@ export function BatchTest({ runSlug }: { runSlug: string }) {
         } catch (caught) { setError(caught instanceof Error ? caught.message : (thai ? "ยกเลิกไม่สำเร็จ" : "Cancellation failed")); }
       }}><X className="h-4 w-4" />{thai ? "ยกเลิกงาน" : "Cancel job"}</Button>}
     </div>}
+    {lookupError && <p role="alert" className="text-sm text-destructive">{lookupError === 'unavailable' ? (thai ? 'ไม่พบผลทดสอบนี้ หรือผลหมดอายุแล้ว' : 'This prediction is unavailable or has expired.') : (thai ? 'โหลดงานทดสอบไม่สำเร็จ กรุณาลองใหม่' : 'Could not load prediction jobs. Please retry.')}</p>}
     {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
     {result && job && <div className="space-y-3">
       <p className="text-sm font-medium">{thai ? "สำเร็จ" : "Completed"} {result.succeeded} / {result.total} · {thai ? "ไม่สำเร็จ" : "Failed"} {result.failed}</p>

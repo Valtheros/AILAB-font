@@ -17,6 +17,8 @@ import { CVCatalog, ModelSpec, ParamSpec, catalogPlaceholder, modelDefaults, get
 import { ConfigValue, TrainingConfig } from "@/lib/trainingConfig";
 import { ExecutionSelector } from './execution-selector';
 import { executionReadiness, initialComputeAvailability } from '@/lib/compute';
+import { commonParameterValue, parameterErrors } from '@/lib/parameter-validation';
+import { memoryMessage } from '@/lib/resource-messages';
 
 const API_URL = apiBaseUrl();
 const VRAM_ESTIMATE_WARNING = "VRAM is an estimate, not a guarantee against out-of-memory errors.";
@@ -35,10 +37,11 @@ interface ResourcePlanPreview {
 
 interface Dataset {
   id: string; name: string; images: number; size: string; formats: string[]; tasks: string[];
-  collectionName?: string | null; version?: number | null;
+  collectionId?: string | null; collectionName?: string | null; version?: number | null;
   datasetTask?: string; canonicalTask?: string; canonicalFormat?: string;
   compatibleModels?: Array<{ id: string; ready: boolean }>;
   labelSchema?: { origin: string; numClasses?: number } | null;
+  maskClassIds?: number[] | null;
 }
 
 const taskIcons: Record<string, typeof Activity> = { image_classification: Cpu, segmentation: Boxes, object_detection: Activity };
@@ -51,13 +54,14 @@ function compatible(dataset: Dataset, model: ModelSpec, taskId: string) {
 function coerce(spec: ParamSpec, raw: string | boolean): ConfigValue {
   if (spec.type === "boolean") return Boolean(raw);
   if (spec.type === "number") {
+    if (raw === "") return Number.NaN;
     const value = Number(raw);
     return Number.isFinite(value) ? value : Number(spec.default);
   }
   return String(raw);
 }
 
-function ParamInput({ spec, value, onChange, modelType, disabled = false }: { spec: ParamSpec; value: ConfigValue; onChange: (value: ConfigValue) => void; modelType: string; disabled?: boolean }) {
+function ParamInput({ spec, value, onChange, modelType, error, disabled = false }: { spec: ParamSpec; value: ConfigValue; onChange: (value: ConfigValue) => void; modelType: string; error?: string; disabled?: boolean }) {
   const { t } = useLanguage();
   const id = useId();
   const labelKey = spec.key === 'epochs' ? 'config.label.epochs' : spec.key === 'batch_size' ? 'config.label.batch'
@@ -79,15 +83,17 @@ function ParamInput({ spec, value, onChange, modelType, disabled = false }: { sp
   );
   if (spec.type === "select") return (
     <div className="space-y-2"><Label htmlFor={id}>{label}</Label>
-      <Select value={String(value ?? spec.default)} onValueChange={onChange} disabled={disabled}><SelectTrigger id={id} aria-describedby={description ? `${id}-help` : undefined}><SelectValue /></SelectTrigger>
+      <Select value={String(value ?? spec.default)} onValueChange={onChange} disabled={disabled}><SelectTrigger id={id} aria-invalid={Boolean(error)} aria-describedby={[description ? `${id}-help` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}><SelectValue /></SelectTrigger>
         <SelectContent>{spec.options?.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
       </Select>{description && <p id={`${id}-help`} className="text-xs leading-5 text-muted-foreground">{description}</p>}
+      {error && <p id={`${id}-error`} className="text-xs text-destructive">{error}</p>}
     </div>
   );
   return (
     <div className="space-y-2"><Label htmlFor={id}>{label}</Label>
-      <Input id={id} aria-describedby={description ? `${id}-help` : undefined} disabled={disabled} type={spec.type === "number" ? "number" : "text"} value={String(value ?? spec.default)} min={spec.min} max={spec.max} step={spec.step} onChange={(event) => onChange(coerce(spec, event.target.value))} />
+      <Input id={id} aria-invalid={Boolean(error)} aria-describedby={[description ? `${id}-help` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined} disabled={disabled} type={spec.type === "number" ? "number" : "text"} value={typeof value === 'number' && Number.isNaN(value) ? '' : String(value ?? spec.default)} min={spec.min} max={spec.max} step={spec.step} onChange={(event) => onChange(coerce(spec, event.target.value))} />
       {description && <p id={`${id}-help`} className="text-xs leading-5 text-muted-foreground">{description}</p>}
+      {error && <p id={`${id}-error`} className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
@@ -130,6 +136,13 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
   const update = <K extends keyof TrainingConfig>(key: K, value: TrainingConfig[K]) => onChange({ ...config, [key]: value });
   const updateParam = (key: string, value: ConfigValue) => onChange({ ...config, params: { ...config.params, [key]: value } });
   const datasetsForModel = useMemo(() => datasets.filter((dataset) => compatible(dataset, selectedModel, selectedTask.id)), [datasets, selectedModel, selectedTask.id]);
+  const selectedDataset = datasetsForModel.find((dataset) => dataset.name === config.datasetName);
+  const labelSchema = selectedDataset?.labelSchema;
+  const datasetControlsMasks = selectedModel.id === 'deeplabv3plus' && labelSchema?.origin === 'label_studio' && Number.isInteger(labelSchema.numClasses) && Number(labelSchema.numClasses) > 0;
+  const maskIds = selectedDataset?.maskClassIds;
+  const requiredMaskClasses = maskIds ? Math.max(0, ...maskIds.filter(id => id !== Number(config.params.ignore_index ?? 255))) + 1 : undefined;
+  const fieldErrors = parameterErrors(catalog, selectedModel, config, language === 'th', datasetControlsMasks ? Number(labelSchema?.numClasses) : undefined, requiredMaskClasses);
+  const parametersInvalid = Object.keys(fieldErrors).length > 0;
   const resourceRequest = JSON.stringify({
     model_type: config.modelType,
     execution: config.execution,
@@ -140,11 +153,13 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
   const [resourceCheckAttempt, setResourceCheckAttempt] = useState(0);
   // A response belongs to one configuration; never show a previous model as safe.
   const preview = resourcePreview?.request === resourceRequest ? resourcePreview : null;
-  const memory = preview?.plan;
+  const memory = parametersInvalid ? null : preview?.plan;
   const readiness = executionReadiness(config.execution, computeAvailability);
-  const memoryStatus = !preview ? "config.memory.checking" : !memory ? "config.memory.unavailable" : !memory.ok ? "config.memory.adjust" : memory.warnings.length ? "config.memory.readyWithWarnings" : "config.memory.ready";
-  const memoryMessages = memory ? [...new Set([...memory.errors, ...memory.warnings.filter((warning) => warning !== VRAM_ESTIMATE_WARNING), ...memory.suggestions])] : [];
+  const memoryStatus = parametersInvalid ? (language === 'th' ? 'ตรวจค่าพารามิเตอร์' : 'Check parameters') : !preview ? "config.memory.checking" : !memory ? "config.memory.unavailable" : !memory.ok ? "config.memory.adjust" : memory.warnings.length ? "config.memory.readyWithWarnings" : "config.memory.ready";
+  const memoryMessages = memory ? [...new Set([...memory.errors, ...memory.warnings.filter((warning) => warning !== VRAM_ESTIMATE_WARNING), ...memory.suggestions])]
+    .filter((item, _, all) => item !== 'Reduce batch size or image size until the estimated GPU memory fits the safe limit.' || !all.some(other => other.startsWith('Use batch_size <='))) : [];
   const trainBlockReason = !config.datasetName ? "config.train.selectDataset"
+    : parametersInvalid ? (language === 'th' ? 'กรุณาแก้ไขค่าพารามิเตอร์ที่ไม่ถูกต้อง' : 'Correct the invalid parameters before training.')
     : !['ready', 'busy'].includes(readiness) ? `config.device.${readiness}`
     : !memory ? (preview ? "config.memory.retry" : "config.memory.checking")
     : !memory.ok ? "config.train.adjustMemory"
@@ -152,7 +167,7 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
     : saveState === "error" ? "config.train.saveFailed"
     : saveState !== "saved" ? "config.train.saveFirst" : null;
   useEffect(() => {
-    if (catalogStatus !== "ready") return;
+    if (catalogStatus !== "ready" || parametersInvalid) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       fetch(`${API_URL}/api/resource-plan/preview`, {
@@ -176,7 +191,7 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
       clearTimeout(timer);
       controller.abort();
     };
-  }, [catalogStatus, resourceRequest, resourceCheckAttempt]);
+  }, [catalogStatus, resourceRequest, resourceCheckAttempt, parametersInvalid]);
 
   const chooseTask = (taskId: string) => {
     const task = getTask(catalog, taskId); const model = task.models[0];
@@ -187,7 +202,7 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
     const defaults = modelDefaults(model, catalog.common_params);
     onChange({ ...config, modelType: model.id, modelName: model.model_name, datasetName: "", params: { ...defaults.params, device: config.device }, batchSize: defaults.batchSize, workers: defaults.workers, amp: defaults.amp });
   };
-  const commonValue = (spec: ParamSpec) => ({ epochs: config.epochs, batch_size: config.batchSize, device: config.device, workers: config.workers, amp: config.amp, seed: config.seed } as Record<string, ConfigValue>)[spec.key] ?? config.params[spec.key] ?? spec.default;
+  const commonValue = (spec: ParamSpec) => commonParameterValue(config, spec);
   const updateCommon = (spec: ParamSpec, value: ConfigValue) => {
     const next = { ...config, params: { ...config.params, [spec.key]: value } };
     if (spec.key === "epochs") next.epochs = Number(value);
@@ -198,12 +213,18 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
     if (spec.key === "seed") next.seed = Number(value);
     onChange(next);
   };
+  const chooseDataset = (dataset: Dataset) => {
+    if (selectedModel.id === 'deeplabv3plus' && dataset.maskClassIds && dataset.labelSchema?.origin !== 'label_studio') {
+      const ignored = Number(config.params.ignore_index ?? 255);
+      const minimum = Math.max(0, ...dataset.maskClassIds.filter(id => id !== ignored)) + 1;
+      const current = Number(config.params.num_classes ?? selectedModel.params.find(spec => spec.key === 'num_classes')?.default ?? 2);
+      onChange({ ...config, datasetName: dataset.name, params: { ...config.params, num_classes: Math.max(current, minimum) } });
+    } else update('datasetName', dataset.name);
+  };
   const beginnerKeys = new Set(['architecture', 'model_size', 'encoder_name', 'image_size', 'imgsz', 'pretrained']);
   const basicModelParams = selectedModel.params.filter((spec) => beginnerKeys.has(spec.key));
   const advancedModelParams = selectedModel.params.filter((spec) => !beginnerKeys.has(spec.key));
   const advancedCommonParams = catalog.common_params.filter((spec) => !['device', 'epochs', 'batch_size'].includes(spec.key));
-  const labelSchema = datasetsForModel.find((dataset) => dataset.name === config.datasetName)?.labelSchema;
-  const datasetControlsMasks = selectedModel.id === 'deeplabv3plus' && labelSchema?.origin === 'label_studio' && Number.isInteger(labelSchema.numClasses) && Number(labelSchema.numClasses) > 0;
 
   if (catalogStatus === "loading") return <LoadingState icon={Settings} title={language === "th" ? "กำลังโหลดการตั้งค่า" : "Loading configuration"} />;
   if (catalogStatus === "error") return (
@@ -222,23 +243,23 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
       <CardContent className="grid gap-3 md:grid-cols-2">{selectedTask.models.map((model) => { const active = model.id === selectedModel.id; return <button key={model.id} onClick={() => chooseModel(model)} className={`rounded-md border p-4 text-left ${active ? "border-foreground bg-foreground text-background" : "hover:bg-accent"}`}><div className="flex justify-between"><p className="font-semibold">{model.label}</p>{active && <CheckCircle className="h-5 w-5" />}</div><p className={`mt-2 text-sm leading-6 ${active ? "text-background/80" : "text-muted-foreground"}`}>{t(model.reason)}</p></button>; })}</CardContent>
     </Card>
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Database className="h-5 w-5" />{t('config.title.dataset')}</CardTitle><CardDescription>{t("config.dataset.description")}</CardDescription></CardHeader>
-      <CardContent className="space-y-2">{datasetError && <p className="text-sm text-destructive">{datasetError}</p>}{datasetsForModel.map((dataset) => { const active = dataset.name === config.datasetName; return <button key={dataset.id} onClick={() => update("datasetName", dataset.name)} className={`w-full rounded-md border p-4 text-left ${active ? "border-foreground bg-accent" : "hover:bg-accent/60"}`}><div className="flex flex-wrap justify-between gap-2"><span className="break-all font-medium">{dataset.collectionName || dataset.name}{dataset.version ? ` · v${dataset.version}` : ""}</span>{active && <StatusBadge tone="success">{t('config.selected')}</StatusBadge>}</div><p className="mt-1 text-xs text-muted-foreground">{dataset.images.toLocaleString()} {t('config.images')} - {dataset.canonicalTask ?? dataset.datasetTask ?? "dataset"} - {dataset.canonicalFormat ?? "source"}</p></button>; })}{datasetsForModel.length === 0 && <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{t("tasks.dataset.empty")}</p>}</CardContent>
+      <CardContent className="space-y-2">{datasetError && <p className="text-sm text-destructive">{datasetError}</p>}{datasetsForModel.map((dataset) => { const active = dataset.name === config.datasetName; const duplicate = datasetsForModel.filter(other => (other.collectionName || other.name) === (dataset.collectionName || dataset.name) && other.version === dataset.version).length > 1; return <button key={dataset.id} onClick={() => chooseDataset(dataset)} className={`w-full rounded-md border p-4 text-left ${active ? "border-foreground bg-accent" : "hover:bg-accent/60"}`}><div className="flex flex-wrap justify-between gap-2"><span className="break-all font-medium">{dataset.collectionName || dataset.name}{dataset.version ? ` · v${dataset.version}` : ""}{duplicate && ` · ${dataset.collectionId?.slice(0, 8) || dataset.id.slice(0, 8)}`}</span>{active && <StatusBadge tone="success">{t('config.selected')}</StatusBadge>}</div><p className="mt-1 text-xs text-muted-foreground">{dataset.images.toLocaleString()} {t('config.images')} - {dataset.canonicalTask ?? dataset.datasetTask ?? "dataset"} - {dataset.canonicalFormat ?? "source"}</p></button>; })}{datasetsForModel.length === 0 && <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{t("tasks.dataset.empty")}</p>}</CardContent>
     </Card>
     <Card><CardHeader><CardTitle>{t('config.title.run')}</CardTitle><CardDescription>{t("config.run.description")}</CardDescription></CardHeader>
-      <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3"><div className="space-y-2"><Label htmlFor="task-project-name">{t('config.projectName')}</Label><Input id="task-project-name" value={config.projectName} onChange={(event) => update("projectName", event.target.value)} /></div><ExecutionSelector value={config.execution} onAvailabilityChange={setComputeAvailability} onChange={(execution) => onChange({ ...config, execution, device: execution.mode === 'cpu' ? 'cpu' : '0', deviceSelection: execution.mode === 'auto' ? 'auto' : 'manual' })} />{catalog.common_params.filter((spec) => ['epochs', 'batch_size'].includes(spec.key)).map((spec) => <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={commonValue(spec)} onChange={(value) => updateCommon(spec, value)} />)}</CardContent>
+      <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-3"><div className="space-y-2"><Label htmlFor="task-project-name">{t('config.projectName')}</Label><Input id="task-project-name" value={config.projectName} onChange={(event) => update("projectName", event.target.value)} /></div><ExecutionSelector value={config.execution} onAvailabilityChange={setComputeAvailability} onChange={(execution) => onChange({ ...config, execution, device: execution.mode === 'cpu' ? 'cpu' : '0', deviceSelection: execution.mode === 'auto' ? 'auto' : 'manual' })} />{catalog.common_params.filter((spec) => ['epochs', 'batch_size'].includes(spec.key)).map((spec) => <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={commonValue(spec)} error={fieldErrors[spec.key]} onChange={(value) => updateCommon(spec, value)} />)}</CardContent>
     </Card>
     <Card><CardHeader><CardTitle>{t('config.title.parameters')}: {selectedModel.label}</CardTitle><CardDescription>{t("config.params.description")}</CardDescription></CardHeader>
       <CardContent className="space-y-5">
-        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{basicModelParams.map((spec) => <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={config.params[spec.key] ?? spec.default} onChange={(value) => updateParam(spec.key, value)} />)}</div>
-        {(advancedCommonParams.length > 0 || advancedModelParams.length > 0) && <details className="border-t pt-4"><summary className="cursor-pointer text-sm font-medium">{t('config.advanced')}</summary><p className="mt-2 text-xs text-muted-foreground">{t('config.advanced.description')}</p><div className="mt-4 grid gap-5 md:grid-cols-2 lg:grid-cols-3">{advancedCommonParams.map((spec) => <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={commonValue(spec)} onChange={(value) => updateCommon(spec, value)} />)}{advancedModelParams.map((spec) => { const locked = datasetControlsMasks && ['num_classes', 'ignore_index'].includes(spec.key); const value = locked ? (spec.key === 'num_classes' ? Number(labelSchema?.numClasses) : 255) : config.params[spec.key] ?? spec.default; return <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={value} disabled={locked} onChange={(next) => updateParam(spec.key, next)} />; })}</div></details>}
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{basicModelParams.map((spec) => <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={config.params[spec.key] ?? spec.default} error={fieldErrors[spec.key]} onChange={(value) => updateParam(spec.key, value)} />)}</div>
+        {(advancedCommonParams.length > 0 || advancedModelParams.length > 0) && <details className="border-t pt-4"><summary className="cursor-pointer text-sm font-medium">{t('config.advanced')}{[...advancedCommonParams, ...advancedModelParams].some(spec => fieldErrors[spec.key]) && <span className="ml-2 text-destructive">{language === 'th' ? 'มีค่าที่ต้องแก้ไข' : 'Values need attention'}</span>}</summary><p className="mt-2 text-xs text-muted-foreground">{t('config.advanced.description')}</p><div className="mt-4 grid gap-5 md:grid-cols-2 lg:grid-cols-3">{advancedCommonParams.map((spec) => <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={commonValue(spec)} error={fieldErrors[spec.key]} onChange={(value) => updateCommon(spec, value)} />)}{advancedModelParams.map((spec) => { const locked = datasetControlsMasks && ['num_classes', 'ignore_index'].includes(spec.key); const value = locked ? (spec.key === 'num_classes' ? Number(labelSchema?.numClasses) : 255) : config.params[spec.key] ?? spec.default; return <ParamInput key={spec.key} modelType={selectedModel.id} spec={spec} value={value} error={fieldErrors[spec.key]} disabled={locked} onChange={(next) => updateParam(spec.key, next)} />; })}</div></details>}
       </CardContent>
     </Card>
     <Card><CardHeader><div className="flex flex-wrap justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Memory Safety</CardTitle><CardDescription>{t("Helps prevent memory errors before training starts.")}</CardDescription></div><StatusBadge tone={!memory ? "neutral" : memory.ok && memory.warnings.length === 0 ? "success" : "warning"}>{t(memoryStatus)}</StatusBadge></div></CardHeader>
       <CardContent className="space-y-4">
-        {!memory && <p role="status" className="text-sm text-muted-foreground">{t(preview ? "config.memory.retry" : "config.memory.checking")}</p>}
+        {!memory && <p role="status" className="text-sm text-muted-foreground">{parametersInvalid ? (language === 'th' ? 'แก้ไขค่าพารามิเตอร์ก่อนตรวจหน่วยความจำ' : 'Correct invalid parameters before checking memory.') : t(preview ? "config.memory.retry" : "config.memory.checking")}</p>}
         {memory && <div className="flex flex-wrap gap-2"><Badge variant="secondary">{memory.device}</Badge><Badge variant="secondary">batch_size {memory.batchSize}</Badge></div>}
         {memory && (
-          <div className={`flex items-start gap-2 rounded-md border p-3 text-sm ${memory.isWithinLimit ? "border-emerald-500/40 bg-emerald-500/10" : "border-amber-500/40 bg-amber-500/10"}`}>
+          <div className={`flex items-start gap-2 rounded-md border p-3 text-sm ${memory.ok && memory.isWithinLimit ? "border-emerald-500/40 bg-emerald-500/10" : "border-amber-500/40 bg-amber-500/10"}`}>
             {memory.isWithinLimit ? <ShieldCheck aria-hidden="true" className="h-5 w-5 shrink-0" /> : <TriangleAlert aria-hidden="true" className="h-5 w-5 shrink-0" />}
             <div className="min-w-0">
               <p>
@@ -248,15 +269,16 @@ export function TaskConfiguration({ config, onChange, onSave, onTrain, saveState
                 {config.execution.mode !== 'cpu' && !memory.isWithinLimit && <span className="ml-1 font-medium">{t("config.vram.over")}</span>}
               </p>
               {config.execution.mode !== 'cpu' && memory.warnings.includes(VRAM_ESTIMATE_WARNING) && <p className="mt-1 text-xs leading-5 text-muted-foreground">{t(VRAM_ESTIMATE_WARNING)}</p>}
+              {memoryMessages.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5">{memoryMessages.map((item) => <li key={item}>{memoryMessage(item, language === 'th')}</li>)}</ul>}
             </div>
           </div>
-        )}{memoryMessages.length > 0 && <div className="rounded-md border border-amber-400/40 bg-amber-500/10 p-3 text-sm"><ul className="list-disc space-y-1 pl-5">{memoryMessages.map((item) => <li key={item}>{t(item)}</li>)}</ul></div>}
-        {preview && !memory && <Button variant="outline" onClick={() => { setResourcePreview(null); setResourceCheckAttempt((attempt) => attempt + 1); }}><RefreshCw className="h-4 w-4" />{t("config.memory.retryButton")}</Button>}
+        )}
+        {preview && !memory && !parametersInvalid && <Button variant="outline" onClick={() => { setResourcePreview(null); setResourceCheckAttempt((attempt) => attempt + 1); }}><RefreshCw className="h-4 w-4" />{t("config.memory.retryButton")}</Button>}
         <Button variant="outline" onClick={() => { const next = { ...config, params: { ...config.params } }; for (const [key, value] of Object.entries(selectedModel.safe_defaults ?? {})) { next.params[key] = value; if (key === "batch_size") next.batchSize = Number(value); if (key === "workers") next.workers = Number(value); if (key === "amp") next.amp = Boolean(value); } onChange(next); }}>{t('Apply safe settings')}</Button></CardContent>
     </Card>
     <div className="flex flex-col justify-end gap-2 pb-8 sm:flex-row">
       {trainBlockReason && <p role="status" className="self-center text-sm text-muted-foreground">{t(trainBlockReason)}</p>}
-      <Button variant="outline" size="lg" onClick={() => void onSave().catch(() => undefined)} disabled={saveState === "saving" || saveState === "saved"}>
+      <Button variant="outline" size="lg" onClick={() => void onSave().catch(() => undefined)} disabled={parametersInvalid || saveState === "saving" || saveState === "saved"}>
         {saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{t('config.save.button')}
       </Button>
       <Button size="lg" onClick={onTrain} disabled={starting || saveState !== "saved" || !config.datasetName || !memory?.ok || !['ready', 'busy'].includes(readiness)}>{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{t('config.train.button')}</Button>

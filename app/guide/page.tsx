@@ -213,13 +213,15 @@ const modelGuides: ModelGuide[] = [
       "Create train/images and train/masks folders.",
       "Each image must have a mask with the same base filename.",
       "Mask pixel values must match the class IDs used for training.",
+      "Use indexed masks: 0 is background, 1–254 are class IDs, and 255 is normally ignored.",
+      "To name classes, add train/_classes.csv with rows such as 0,background and 1,road.",
     ],
     importResult: [
       "Ready models should include DeepLabV3+ only.",
       "Import will fail if masks are missing for images.",
     ],
     configure: [
-      "Set Mask classes to the number of pixel classes.",
+      "Set Mask classes to the highest class ID plus one, including background (for IDs 0, 1 and 2, use 3).",
       "Use ignore value 255 only if masks contain unlabeled pixels.",
       "Start with resnet34 encoder and ImageNet weights.",
     ],

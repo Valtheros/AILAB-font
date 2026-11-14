@@ -129,6 +129,38 @@ test('Label Studio mask classes show dataset values and cannot be edited', async
   expect(change).not.toHaveBeenCalled();
 });
 
+test('invalid model parameters block save and training before memory estimation', async () => {
+  const catalog = structuredClone(catalogPlaceholder);
+  catalog.tasks[0].models[0].params = [{ key: 'mixup', label: 'MixUp', type: 'number', default: 0, min: 0, max: 1 }];
+  const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(
+    url.endsWith('/api/model-catalog') ? catalog : url.endsWith('/api/datasets') ? { datasets: [] } : { ok: true },
+  )));
+  vi.stubGlobal('fetch', fetchMock);
+  render(<TaskConfiguration config={{ ...defaultConfig, datasetName: 'qa', params: { mixup: 1.1 } }} onChange={vi.fn()} onSave={vi.fn(async () => {})} onTrain={vi.fn()} starting={false} saveState="unsaved" />);
+  const error = await screen.findByText('Enter a value from 0 to 1.');
+  expect(error).toBeTruthy();
+  expect((screen.getByRole('button', { name: 'Train' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Save draft' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/api/resource-plan/preview'))).toBe(false);
+});
+
+test('choosing indexed masks includes background and sparse class IDs in Mask classes', async () => {
+  const catalog = structuredClone(catalogPlaceholder);
+  catalog.tasks[0].models[0].id = 'deeplabv3plus';
+  catalog.tasks[0].models[0].params = [
+    { key: 'num_classes', label: 'Mask classes', type: 'number', default: 2, min: 1, max: 1000 },
+    { key: 'ignore_index', label: 'Ignored mask value', type: 'number', default: 255 },
+  ];
+  const datasets = [{ id: 'data', name: 'masks', images: 2, size: '1MB', formats: [], tasks: [], compatibleModels: [{ id: 'deeplabv3plus', ready: true }], maskClassIds: [1, 5] }];
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(
+    url.endsWith('/api/model-catalog') ? catalog : url.endsWith('/api/datasets') ? { datasets } : { ok: true },
+  ))));
+  const change = vi.fn();
+  render(<TaskConfiguration config={{ ...defaultConfig, modelType: 'deeplabv3plus', params: { num_classes: 2, ignore_index: 255 } }} onChange={change} onSave={vi.fn(async () => {})} onTrain={vi.fn()} starting={false} saveState="saved" />);
+  fireEvent.click(await screen.findByRole('button', { name: /masks/ }));
+  expect(change.mock.lastCall?.[0].params.num_classes).toBe(6);
+});
+
 test('explains that a dataset is needed even when the memory plan is ready', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(
     url.endsWith('/api/model-catalog') ? catalogPlaceholder

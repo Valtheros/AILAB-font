@@ -20,8 +20,15 @@ type ClassStat = { images: number; objects: number; pixels: number };
 type SplitStat = { images: number; pixels: number; classes: Record<string, ClassStat> };
 type Details = { id: string; name: string; version?: number | null; contentSha256?: string | null; index: { status: string; total: number; processed: number; skipped: number; ready: boolean; error?: string | null; stats: Record<string, SplitStat> } };
 type Summary = { ordinal: number; filename: string; split: string; classes: string[]; hasObjects: boolean };
-type ObjectLabel = { className: string; bbox: number[]; segmentation?: number[][] | object | null };
+type ObjectLabel = { className: string; classId?: number; bbox: number[]; segmentation?: number[][] | object | null };
 type ImageInfo = { ordinal: number; filename: string; split: string; width: number; height: number; annotations: { kind: string; className?: string; objects?: ObjectLabel[]; mask?: boolean; maskUnavailable?: boolean; classes?: { id: number; name: string }[] } };
+
+function objectColor(object: ObjectLabel, classes?: { id: number; name: string }[]) {
+  const id = object.classId ?? classes?.find((item) => item.name === object.className)?.id;
+  if (id !== undefined && id > 0) return COLORS[(id - 1) % COLORS.length];
+  const hash = Array.from(object.className).reduce((value, character) => (value * 31 + character.codePointAt(0)!) >>> 0, 0);
+  return COLORS[hash % COLORS.length];
+}
 type Duplicate = { hash: string; count: number; images: { filename: string; split: string; ordinal: number }[] };
 
 function Preview({ base, image, thai }: { base: string; image: ImageInfo; thai: boolean }) {
@@ -57,12 +64,12 @@ function Preview({ base, image, thai }: { base: string; image: ImageInfo; thai: 
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={`${base}/source`} alt={image.filename} className="block max-h-[55vh] max-w-full object-contain" />
     </>}
-    {image.annotations.objects && <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${image.width} ${image.height}`} preserveAspectRatio="none" aria-label={thai ? "กรอบ label" : "Label boxes"}>{image.annotations.objects.map((object, index) => <rect key={index} x={object.bbox[0]} y={object.bbox[1]} width={object.bbox[2]} height={object.bbox[3]} fill="none" stroke={COLORS[index % COLORS.length]} strokeWidth={Math.max(image.width / 300, 1)} />)}</svg>}
+    {image.annotations.objects && <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${image.width} ${image.height}`} preserveAspectRatio="none" aria-label={thai ? "กรอบ label" : "Label boxes"}>{image.annotations.objects.map((object, index) => <rect key={index} x={object.bbox[0]} y={object.bbox[1]} width={object.bbox[2]} height={object.bbox[3]} fill="none" stroke={objectColor(object, image.annotations.classes)} strokeWidth={Math.max(image.width / 300, 1)} />)}</svg>}
   </div>
   {image.annotations.className && <p className="text-sm">Class: <strong>{image.annotations.className}</strong></p>}
   {image.annotations.maskUnavailable && <p className="text-sm text-amber-600 dark:text-amber-400">{thai ? "บางวัตถุไม่มี mask ที่ใช้แสดงได้" : "A mask is unavailable for one or more objects."}</p>}
   {image.annotations.classes && <div className="flex flex-wrap gap-3 text-xs">{image.annotations.classes.filter((item) => item.id > 0).map((item) => <span key={item.id} className="flex items-center gap-1"><span className="h-2.5 w-2.5" style={{ backgroundColor: COLORS[(item.id - 1) % COLORS.length] }} />{item.name}</span>)}</div>}
-  {image.annotations.objects && <ul className="max-h-32 space-y-1 overflow-y-auto text-sm">{image.annotations.objects.map((object, index) => <li key={index} className="flex items-center gap-2"><span className="h-2.5 w-2.5" style={{ backgroundColor: COLORS[index % COLORS.length] }} />{object.className}</li>)}</ul>}
+  {image.annotations.objects && <ul className="max-h-32 space-y-1 overflow-y-auto text-sm">{image.annotations.objects.map((object, index) => <li key={index} className="flex items-center gap-2"><span className="h-2.5 w-2.5" style={{ backgroundColor: objectColor(object, image.annotations.classes) }} />{object.className}</li>)}</ul>}
   </div>;
 }
 

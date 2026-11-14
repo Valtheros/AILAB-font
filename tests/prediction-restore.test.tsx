@@ -67,3 +67,11 @@ test('reopening resets the edit guard and restores that run device', async () =>
   view.rerender(<ModelTestDialog open onOpenChange={() => {}} runSlug="run" />);
   await waitFor(() => expect((screen.getByLabelText('Device') as HTMLSelectElement).value).toBe('auto'));
 });
+
+test('notification requests its exact prediction and reports a missing one', async () => {
+  fetchMock.mockResolvedValue(response({ job: null }));
+  render(<ModelTestDialog open onOpenChange={() => {}} runSlug="run" initialJobId="old-job" />);
+  expect(await screen.findByText('This prediction is unavailable or has expired.')).toBeTruthy();
+  expect(String(fetchMock.mock.calls[0][0])).toContain('jobId=old-job');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});

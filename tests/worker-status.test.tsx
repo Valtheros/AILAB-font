@@ -12,7 +12,7 @@ const availability = vi.hoisted(() => ({ current: {
 vi.mock('@/components/language-provider', () => ({ useLanguage: () => ({ language: 'th', t: (key: string) => dictionary.th[key] ?? key }) }));
 vi.mock('@/lib/use-compute-availability', () => ({ useComputeAvailability: () => availability.current }));
 vi.mock('@/lib/api', () => ({ apiBaseUrl: () => '', artifactDownloadUrl: () => '' }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('@/components/tasks/model-test-dialog', () => ({ ModelTestDialog: () => null }));
 vi.mock('@/components/tasks/evaluation-panel', () => ({ EvaluationPanel: () => <div>Evaluation panel</div> }));
 vi.mock('@/components/tasks/model-api-panel', () => ({ ModelApiPanel: () => <div>Model API panel</div> }));

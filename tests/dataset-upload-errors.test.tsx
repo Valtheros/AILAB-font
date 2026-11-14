@@ -128,3 +128,20 @@ test('handles a 413 HTML response even when no header event was observed', async
   });
   expect(await screen.findByText(/ไฟล์มีขนาดเกินขีดจำกัดการอัปโหลด/)).toBeTruthy();
 });
+
+test('explains an invalid annotation JSON and keeps technical details expandable', async () => {
+  render(<DatasetPage />);
+  selectZip();
+  const request = MockRequest.requests[0];
+  act(() => {
+    request.status = 400;
+    request.responseText = JSON.stringify({ detail: "Could not read COCO annotation file '_annotations.coco.json'. Check that the JSON is valid: Expecting value: line 1 column 14 (char 13)" });
+    request.dispatchEvent(new Event('load'));
+    request.dispatchEvent(new Event('loadend'));
+  });
+  expect(await screen.findByText(/The annotation file _annotations.coco.json is not valid JSON/)).toBeTruthy();
+  expect(screen.getByText('Technical details').closest('details')?.open).toBe(false);
+  fireEvent.click(screen.getByText('Technical details'));
+  expect(screen.getByText('Technical details').closest('details')?.open).toBe(true);
+  expect(MockRequest.requests).toHaveLength(1);
+});

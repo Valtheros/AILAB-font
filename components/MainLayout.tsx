@@ -3,7 +3,7 @@
 import { Navbar } from "@/components/Navbar";
 import { Sidebar, MobileMenuButton } from "@/components/Sidebar";
 import { AuthGate } from "@/components/auth/auth-gate";
-import { Suspense, useState, useCallback } from "react";
+import { Suspense, useState, useCallback, useRef } from "react";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -12,6 +12,7 @@ interface MainLayoutProps {
 
 export function MainLayout({ children, showSidebar = true }: MainLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   const closeSidebar = useCallback(() => {
     setSidebarOpen(false);
@@ -22,11 +23,11 @@ export function MainLayout({ children, showSidebar = true }: MainLayoutProps) {
       <Navbar
         mobileMenuButton={
           showSidebar ? (
-            <MobileMenuButton onClick={() => setSidebarOpen(true)} />
+            <MobileMenuButton onClick={() => setSidebarOpen(true)} buttonRef={menuButtonRef} />
           ) : null
         }
       />
-      {showSidebar && <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />}
+      {showSidebar && <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} menuButtonRef={menuButtonRef} />}
       <main
         className={`pt-16 transition-[padding] duration-300 ${
           showSidebar ? "lg:pl-64" : ""
