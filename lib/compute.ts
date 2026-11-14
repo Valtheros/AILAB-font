@@ -1,8 +1,24 @@
 export type ExecutionSelection = { mode: "auto" | "gpu" | "cpu"; gpuUuid?: string | null; needsSelection?: boolean };
 export type ComputeDevice = { uuid: string; name: string; totalMb: number; freeMb: number; status: string; utilization: number; temperature: number; error?: string; draining: boolean };
-export type ComputeJob = { id: string; kind: string; status: string; queueReason?: string; errorCode?: string; error?: string; inputName?: string; inputBytes?: number; assignedGpu?: { uuid: string; name?: string }; requestedExecution: ExecutionSelection };
+export type ComputeAvailability = { status: 'loading' | 'error' | 'ready'; devices: ComputeDevice[]; cpuAvailable: boolean; coordinatorAvailable: boolean };
+export const initialComputeAvailability: ComputeAvailability = { status: 'loading', devices: [], cpuAvailable: false, coordinatorAvailable: false };
+export function executionReadiness(selection: ExecutionSelection, availability: ComputeAvailability): 'loading' | 'unavailable' | 'offline' | 'ready' | 'busy' {
+  if (availability.status === 'loading') return 'loading';
+  if (availability.status === 'error') return 'unavailable';
+  if (!availability.coordinatorAvailable) return 'offline';
+  if (selection.mode === 'cpu') return availability.cpuAvailable ? 'ready' : 'offline';
+  const candidates = availability.devices.filter((device) => selection.mode === 'auto' || device.uuid === selection.gpuUuid);
+  if (candidates.some((device) => device.status === 'ready')) return 'ready';
+  if (candidates.some((device) => device.status === 'busy')) return 'busy';
+  return 'offline';
+}
+export type ComputeJob = { id: string; kind: string; status: string; queueReason?: string; errorCode?: string; error?: string; inputName?: string; inputBytes?: number; assignedGpu?: { uuid: string; name?: string }; requestedExecution: ExecutionSelection; progress?: { current: number; total: number }; expiresAt?: string | null };
 
 const messages: Record<string, [string, string]> = {
+  STORAGE_QUOTA_EXCEEDED: ["Storage is full or insufficient for this job. Remove unused files or ask an administrator to increase your quota.", "พื้นที่ไม่พอสำหรับงานนี้ กรุณาลบไฟล์ที่ไม่ใช้หรือติดต่อผู้ดูแลเพื่อเพิ่มโควตา"],
+  STORAGE_DISK_FULL: ["The server needs free disk space before accepting more work. Contact an administrator.", "พื้นที่ว่างของเซิร์ฟเวอร์ไม่พอรับงานเพิ่ม กรุณาติดต่อผู้ดูแล"],
+  STORAGE_UNAVAILABLE: ["Storage accounting is temporarily unavailable. Your saved data has not been removed. Please retry.", "ระบบตรวจพื้นที่ยังไม่พร้อม ข้อมูลที่บันทึกไว้ไม่ได้ถูกลบ กรุณาลองใหม่"],
+  STORAGE_IN_USE: ["Files are still being written or transferred. Wait for that work to finish, then retry.", "ยังมีงานเขียนหรือโอนย้ายไฟล์อยู่ กรุณารอให้งานเสร็จแล้วลองใหม่"],
   user_quota: ["Your GPU job quota is full", "โควตางาน GPU ของคุณเต็ม กำลังรอให้งานก่อนหน้าจบ"],
   node_resources: ["Waiting for host RAM or CPU capacity", "กำลังรอ RAM หรือ CPU ของเครื่องให้เพียงพอ"],
   gpu_busy_or_offline: ["Waiting for an available GPU worker", "กำลังรอการ์ดหรือ worker ที่พร้อมทำงาน"],
@@ -11,7 +27,7 @@ const messages: Record<string, [string, string]> = {
   gpu_memory_busy: ["Waiting for sufficient free GPU memory", "กำลังรอหน่วยความจำ GPU ว่างเพียงพอ"],
   gpu_draining: ["GPU is draining; waiting for the administrator", "GPU หยุดรับงานใหม่ชั่วคราว กำลังรอผู้ดูแล"],
   cpu_busy: ["Waiting for the CPU worker to finish its current job", "กำลังรอ CPU worker ทำงานปัจจุบันให้จบ"],
-  COMPUTE_DISABLED: ["Compute workers are not enabled yet.", "ยังไม่ได้เปิดใช้ compute worker"],
+  COMPUTE_DISABLED: ["Compute workers are unavailable. The task was not started; contact an administrator and retry.", "ระบบ compute ยังไม่พร้อม งานนี้ยังไม่ได้เริ่ม กรุณาติดต่อผู้ดูแลแล้วลองใหม่"],
   COMPUTE_FAILED: ["The job failed. See its log for the cause.", "งานไม่สำเร็จ ดูสาเหตุเพิ่มเติมใน log ของงาน"],
   INVALID_EXECUTION: ["Select Auto GPU, a GPU, or CPU.", "กรุณาเลือก Auto GPU, การ์ด GPU หรือ CPU"],
   GPU_SELECTION_REQUIRED: ["Select the GPU again. Its previous index cannot be identified.", "กรุณาเลือก GPU อีกครั้ง ระบบระบุการ์ดจากเลข index เดิมไม่ได้"],
@@ -19,7 +35,8 @@ const messages: Record<string, [string, string]> = {
   GPU_MEMORY_LIMIT: ["This configuration exceeds the GPU memory estimate. Reduce batch or image size.", "ค่าประมาณหน่วยความจำเกินขนาด GPU ลองลด batch หรือขนาดภาพ"],
   QUEUE_LIMIT: ["Too many pending jobs. Cancel a job or wait for it to finish.", "มีงานรอมากเกินกำหนด กรุณายกเลิกบางงานหรือรอให้งานจบ"],
   RUN_IN_USE: ["Cancel active Train and Test jobs before deleting the run.", "กรุณายกเลิกงาน Train และ Test ที่ยังทำงานก่อนลบ run"],
-  INVALID_IMAGE: ["This image cannot be read. Upload a valid image.", "อ่านรูปภาพไม่ได้ กรุณาอัปโหลดไฟล์ภาพที่สมบูรณ์"],
+  INVALID_IMAGE: ["The image is unreadable or exceeds the limit of 10 MiB or 25 million pixels.", "อ่านรูปภาพไม่ได้ หรือรูปใหญ่เกิน 10 MiB หรือ 25 ล้านพิกเซล"],
+  INVALID_BATCH: ["The images or ZIP are invalid. Select up to 100 images that can be read, at most 10 MiB and 25 million pixels each, and 1 GiB total.", "ชุดภาพหรือ ZIP ไม่ถูกต้อง กรุณาเลือกภาพที่อ่านได้ไม่เกิน 100 รูป รูปละไม่เกิน 10 MiB และ 25 ล้านพิกเซล รวมไม่เกิน 1 GiB"],
   USER_RESOURCES_DELETING: ["Account resources are being removed. Contact an administrator.", "บัญชีกำลังล้างข้อมูล กรุณาติดต่อผู้ดูแล"],
   worker_offline: ["Worker offline; resources remain reserved", "Worker ขาดการเชื่อมต่อ กำลังตรวจสอบก่อนคืนทรัพยากร"],
   GPU_OOM: ["GPU memory was exhausted. Reduce batch size or image size.", "หน่วยความจำ GPU เต็ม ลองลด batch size หรือขนาดภาพ"],

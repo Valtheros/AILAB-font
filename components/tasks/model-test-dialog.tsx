@@ -11,7 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { BatchTest } from "@/components/tasks/batch-test";
 import { apiBaseUrl } from "@/lib/api";
 import { useLanguage } from "@/components/language-provider";
 import { ExecutionSelector } from './execution-selector';
@@ -83,14 +85,19 @@ export function ModelTestDialog({
   onOpenChange,
   runSlug,
   modelName,
+  initialJobId,
+  initialMode = "single",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   runSlug: string;
   modelName?: string;
+  initialJobId?: string | null;
+  initialMode?: "single" | "batch";
 }) {
   const { t, language } = useLanguage();
   const thai = language === 'th';
+  const [mode, setMode] = useState(initialMode);
   const [execution, setExecution] = useState<ExecutionSelection>({ mode: 'auto' });
   const [job, setJob] = useState<ComputeJob | null>(null);
   const generation = useRef(0);
@@ -103,6 +110,7 @@ export function ModelTestDialog({
   const [predicting, setPredicting] = useState(false);
   const [result, setResult] = useState<PredictResponse | null>(null);
   const [error, setError] = useState("");
+  const [lookupError, setLookupError] = useState<"unavailable" | "connection" | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Revoke the object URL whenever the preview is replaced or the dialog closes,
@@ -124,6 +132,7 @@ export function ModelTestDialog({
     });
     setResult(null);
     setError("");
+    setLookupError(null);
     setPredicting(false);
     if (inputRef.current) inputRef.current.value = "";
   }, []);
@@ -133,18 +142,23 @@ export function ModelTestDialog({
     reset();
     executionEdited.current = false;
     if (!open) return;
+    setMode(initialMode);
+    if (initialJobId && initialMode === 'batch') return;
     const controller = new AbortController();
     const version = generation.current;
-    fetch(`${API_URL}/api/compute/jobs?runSlug=${encodeURIComponent(runSlug)}`, { signal: controller.signal })
-      .then((r) => r.ok ? r.json() : null).then((data) => {
+    const jobQuery = initialJobId ? `&jobId=${encodeURIComponent(initialJobId)}` : '';
+    fetch(`${API_URL}/api/compute/jobs?runSlug=${encodeURIComponent(runSlug)}${jobQuery}`, { signal: controller.signal })
+      .then((r) => { if (!r.ok) throw new Error('lookup failed'); return r.json(); }).then((data) => {
         if (!controller.signal.aborted && version === generation.current && data?.job) {
           setJob(data.job);
           if (!executionEdited.current) setExecution(data.job.requestedExecution);
           setPreviewUrl(`${API_URL}/api/compute/jobs/${data.job.id}/input`);
+        } else if (!controller.signal.aborted && version === generation.current && initialJobId) {
+          setLookupError('unavailable');
         }
-      }).catch(() => undefined);
+      }).catch(() => { if (!controller.signal.aborted && version === generation.current) setLookupError('connection'); });
     return () => { controller.abort(); generation.current += 1; };
-  }, [open, runSlug, reset]);
+  }, [open, runSlug, reset, initialJobId, initialMode]);
 
   useEffect(() => {
     if (!open || !jobId) return;
@@ -210,6 +224,7 @@ export function ModelTestDialog({
     setJob(null);
     setPredicting(false);
     setError("");
+    setLookupError(null);
     setResult(null);
     setFile(next);
     setPreviewUrl((current) => {
@@ -260,11 +275,18 @@ export function ModelTestDialog({
             Test Model
           </DialogTitle>
           <DialogDescription>
-            {t("test.dialog.description")}
+            {mode === "batch" ? (thai ? "ทำนายภาพหลายภาพด้วยโมเดลที่ฝึกแล้ว" : "Run predictions for multiple images with the trained model.") : t("test.dialog.description")}
             {modelName ? ` (${modelName})` : ""}
           </DialogDescription>
         </DialogHeader>
 
+        <Tabs value={mode} onValueChange={(value) => setMode(value as 'single' | 'batch')} className="flex min-h-0 flex-1 flex-col">
+          <TabsList className="w-fit">
+            <TabsTrigger value="single">{thai ? "ภาพเดียว" : "Single image"}</TabsTrigger>
+            <TabsTrigger value="batch">{thai ? "หลายภาพ" : "Multiple images"}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="batch" className="flex min-h-0 flex-1 flex-col"><BatchTest runSlug={runSlug} initialJobId={initialMode === 'batch' ? initialJobId : null} /></TabsContent>
+          <TabsContent value="single" className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
           <ExecutionSelector value={execution} onChange={(next) => { executionEdited.current = true; requestKey.current = null; setExecution(next); }} disabled={predicting || computeActive(job)} />
           {job && <div role="status" className="space-y-2 border-b pb-3 text-sm">
@@ -390,6 +412,7 @@ export function ModelTestDialog({
             onChange={(event) => chooseFile(event.target.files?.[0])}
           />
 
+          {lookupError && <p role="alert" className="text-sm text-destructive">{lookupError === 'unavailable' ? (thai ? 'ไม่พบผลทดสอบนี้ หรือผลหมดอายุแล้ว' : 'This prediction is unavailable or has expired.') : (thai ? 'โหลดงานทดสอบไม่สำเร็จ กรุณาลองใหม่' : 'Could not load prediction jobs. Please retry.')}</p>}
           {error && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -573,6 +596,8 @@ export function ModelTestDialog({
             {predicting ? t("test.button.predicting") : t("test.button.predict")}
           </Button>
         </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

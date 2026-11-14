@@ -1,33 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Cpu } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useLanguage } from "@/components/language-provider";
-import { apiBaseUrl } from "@/lib/api";
-import { ComputeDevice, ExecutionSelection } from "@/lib/compute";
+import { ComputeAvailability, ExecutionSelection, executionReadiness } from "@/lib/compute";
+import { useComputeAvailability } from '@/lib/use-compute-availability';
 
-export function ExecutionSelector({ value, onChange, disabled = false }: { value: ExecutionSelection; onChange: (value: ExecutionSelection) => void; disabled?: boolean }) {
-  const { language } = useLanguage();
+export function ExecutionSelector({ value, onChange, disabled = false, onAvailabilityChange }: { value: ExecutionSelection; onChange: (value: ExecutionSelection) => void; disabled?: boolean; onAvailabilityChange?: (availability: ComputeAvailability) => void }) {
+  const { language, t } = useLanguage();
   const thai = language === "th";
-  const [devices, setDevices] = useState<ComputeDevice[]>([]);
-  const [error, setError] = useState(false);
-  useEffect(() => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const load = async () => {
-      try {
-        const response = await fetch(`${apiBaseUrl()}/api/compute/devices`, { signal: controller.signal, cache: "no-store" });
-        if (!response.ok) throw new Error();
-        const data = await response.json();
-        if (!controller.signal.aborted) { setDevices(data.devices); setError(false); }
-      } catch { if (!controller.signal.aborted) setError(true); }
-      if (!controller.signal.aborted) timer = setTimeout(load, 5000);
-    };
-    void load();
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, []);
+  const availability = useComputeAvailability();
+  useEffect(() => { onAvailabilityChange?.(availability); }, [availability, onAvailabilityChange]);
+  const devices = availability.devices;
+  const readiness = executionReadiness(value, availability);
   const selected = value.mode === "gpu" ? value.gpuUuid || "missing" : value.mode;
   return <div className="min-w-0 space-y-2">
     <Label className="flex items-center gap-2"><Cpu className="h-4 w-4" />{thai ? "อุปกรณ์ประมวลผล" : "Execution device"}</Label>
@@ -40,6 +27,8 @@ export function ExecutionSelector({ value, onChange, disabled = false }: { value
         <SelectItem value="cpu">CPU</SelectItem>
       </SelectContent>
     </Select>
-    {error && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{thai ? "โหลดสถานะอุปกรณ์ไม่ได้ กำลังลองใหม่" : "Device status unavailable. Retrying."}</p>}
+    <p role="status" className={`text-xs leading-5 ${readiness === 'offline' || readiness === 'unavailable' ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+      {t(`config.device.${readiness}`)}
+    </p>
   </div>;
 }

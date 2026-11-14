@@ -18,6 +18,7 @@ vi.mock('@/components/tasks/task-configuration', () => ({
       <input aria-label="Epochs" value={props.config.epochs} onChange={(e) => props.onChange({ ...props.config, epochs: Number(e.target.value) })} />
       <span data-testid="save-state">{props.saveState}</span>
       <button onClick={() => void props.onSave().catch(() => undefined)} disabled={props.saveState === 'saving'}>Save</button>
+      <button onClick={() => props.onChange({ ...props.config, params: { ...props.config.params } })}>Apply unchanged</button>
     </div>;
   },
 }));
@@ -60,6 +61,38 @@ test('edits during Save stay unsaved and cannot train until the latest values ar
   fetchMock.mockResolvedValueOnce(response({})).mockResolvedValueOnce(response({ ...draft, status: 'queued' }));
   await act(async () => { state.configuration!.onTrain(); });
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/start'))).toBe(true);
+});
+
+test('unchanged or reverted settings keep the saved draft ready to train', async () => {
+  fetchMock.mockResolvedValueOnce(response(draft));
+  render(<TaskDetailPage />);
+  const epochs = await screen.findByLabelText('Epochs');
+  fireEvent.click(screen.getByText('Apply unchanged'));
+  expect(screen.getByTestId('save-state').textContent).toBe('saved');
+  fireEvent.change(epochs, { target: { value: '10' } });
+  expect(screen.getByTestId('save-state').textContent).toBe('saved');
+  fireEvent.change(epochs, { target: { value: '20' } });
+  expect(screen.getByTestId('save-state').textContent).toBe('unsaved');
+  fireEvent.change(epochs, { target: { value: '10' } });
+  expect(screen.getByTestId('save-state').textContent).toBe('saved');
+  const leave = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(leave);
+  expect(leave.defaultPrevented).toBe(false);
+});
+
+test('reverting while a different draft is saving still warns before leaving', async () => {
+  const pending = deferred();
+  fetchMock.mockResolvedValueOnce(response(draft)).mockReturnValueOnce(pending.promise);
+  render(<TaskDetailPage />);
+  const epochs = await screen.findByLabelText('Epochs');
+  fireEvent.change(epochs, { target: { value: '20' } });
+  fireEvent.click(screen.getByText('Save'));
+  fireEvent.change(epochs, { target: { value: '10' } });
+  const leave = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(leave);
+  expect(leave.defaultPrevented).toBe(true);
+  await act(async () => { pending.resolve(response({ ...draft, epochs: 20 })); });
+  expect(screen.getByTestId('save-state').textContent).toBe('unsaved');
 });
 
 test('overlapping saves create only one new draft and do not navigate away from newer edits', async () => {

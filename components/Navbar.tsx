@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useLanguage } from "@/components/language-provider";
+import { NotificationBell } from "@/components/notification-bell";
 
 interface NavbarProps {
   mobileMenuButton?: React.ReactNode;
@@ -41,6 +42,7 @@ export function Navbar({ mobileMenuButton }: NavbarProps) {
               <span className="sr-only sm:hidden">Guide</span>
             </Link>
           </Button>
+          <NotificationBell />
           <SessionMenu />
           <LanguageToggle />
           <ThemeToggle />

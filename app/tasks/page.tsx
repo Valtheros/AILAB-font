@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, CalendarClock, Clock3, Cpu, Database, Loader2, Plus, Search, Trash2, X } from "lucide-react";
+import { BarChart3, CalendarClock, Clock3, Cpu, Database, ListTodo, Plus, Search, Trash2, X } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CompareRunsDialog } from "@/components/tasks/compare-runs-dialog";
 import { EmptyState } from "@/components/workspace/empty-state";
+import { LoadingState } from "@/components/workspace/loading-state";
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { apiBaseUrl } from "@/lib/api";
@@ -93,7 +94,7 @@ function TaskCard({ task, onDelete, selectable = false, selected = false, onTogg
 }
 
 export default function TasksPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const router = useRouter();
   const [tasks, setTasks] = useState<TrainingTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,7 +221,7 @@ export default function TasksPage() {
           </div>
         )}
         {loading ? (
-          <EmptyState icon={Loader2} title="Loading tasks" description={t("tasks.loading.description")} />
+          <LoadingState icon={ListTodo} title={language === "th" ? "กำลังโหลดงานเทรน" : "Loading tasks"} description={t("tasks.loading.description")} />
         ) : tasks.length === 0 ? (
           <EmptyState icon={Clock3} title="No tasks yet" description={t("tasks.empty.description")} />
         ) : visibleTasks.length === 0 ? (

@@ -19,6 +19,7 @@ import {
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { useLanguage } from "@/components/language-provider";
+import { LoadingState } from "@/components/workspace/loading-state";
 import { apiBaseUrl } from "@/lib/api";
 
 const API_URL = apiBaseUrl();
@@ -43,6 +44,7 @@ interface Dataset {
   name: string;
   images: number;
   classes: string[];
+  classesKnown?: boolean;
   size: string;
   createdAt: string;
 }
@@ -83,7 +85,7 @@ export default function DashboardPage() {
       })
       .then((data: { datasets?: Dataset[] }) =>
         setDatasets(
-          [...(data.datasets ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+          [...(data.datasets ?? [])].sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0) || a.id.localeCompare(b.id)),
         ),
       )
       .catch(() => setDatasetError(true));
@@ -120,7 +122,7 @@ export default function DashboardPage() {
               {datasetError ? (
                 <p className="text-sm text-muted-foreground">{t("dashboard.recent.datasets.error")}</p>
               ) : datasets === null ? (
-                <p className="text-sm text-muted-foreground">{t("dashboard.recent.loading")}</p>
+                <LoadingState compact icon={Database} title={t("dashboard.recent.loading")} />
               ) : datasets.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{t("dashboard.recent.datasets.empty")}</p>
               ) : (
@@ -131,7 +133,7 @@ export default function DashboardPage() {
                       <span className="shrink-0 text-xs text-muted-foreground">{dataset.size}</span>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {dataset.images.toLocaleString()} {t("dashboard.recent.images")} · {dataset.classes.length} {t("dashboard.recent.classes")} · {dataset.createdAt}
+                      {dataset.images.toLocaleString()} {t("dashboard.recent.images")} · {dataset.classesKnown === false ? (language === "th" ? "ยังไม่ทราบจำนวนคลาส" : "Class count not yet known") : `${dataset.classes.length} ${t("dashboard.recent.classes")}`} · {formatDate(dataset.createdAt, language === "th" ? "th-TH" : "en-US")}
                     </p>
                   </div>
                 ))
@@ -154,7 +156,7 @@ export default function DashboardPage() {
               {runError ? (
                 <p className="text-sm text-muted-foreground">{t("dashboard.recent.runs.error")}</p>
               ) : runs === null ? (
-                <p className="text-sm text-muted-foreground">{t("dashboard.recent.loading")}</p>
+                <LoadingState compact icon={Activity} title={t("dashboard.recent.loading")} />
               ) : runs.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{t("dashboard.recent.runs.empty")}</p>
               ) : (

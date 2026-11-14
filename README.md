@@ -60,6 +60,7 @@ BACKEND_INTERNAL_TOKEN=
 BETTER_AUTH_URL=http://localhost:3000
 BETTER_AUTH_SECRET=replace-with-a-long-random-secret
 BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+TRUSTED_PROXY_IPS=
 DATABASE_URL=postgresql://ailab:ailab_dev_password@localhost:5432/ailab
 
 SMTP_HOST=smtp.gmail.com
@@ -85,6 +86,22 @@ errors under each input.
 Google login is optional. Leave `NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=false` until a
 Google OAuth client ID and secret are configured.
 
+Behind a reverse proxy, set `TRUSTED_PROXY_IPS` to the verified proxy IPs or
+CIDRs in the forwarded chain, separated by spaces or commas. Use the same
+trusted proxy boundary as Caddy; never include untrusted client networks.
+
+When upgrading Better Auth, read its version-specific upgrade guide, check for
+duplicate provider/account pairs, and test existing sessions, email verification,
+OTP password reset, and admin permissions against an isolated database first.
+Back up the production database before deployment; do not run `auth:migrate`
+against production without reviewing the generated schema changes. Public
+`NEXT_PUBLIC_*` settings are embedded when the frontend image is built.
+
+The non-consuming email OTP check endpoint is disabled because concurrent
+checks can lose failed-attempt counts in Better Auth 1.7.14. Do not call its
+server API directly. Password reset verifies and consumes the code atomically
+when the new password is submitted.
+
 ## Backend Flow
 
 Authenticated pages call:
@@ -96,6 +113,27 @@ Authenticated pages call:
 The Next.js proxy validates the Better Auth session, rejects unverified email
 sessions, and forwards trusted user headers to FastAPI. Direct browser calls to
 FastAPI should be used only for local debugging.
+
+## Training UI Contracts
+
+- Compute availability is polled independently of the saved draft. An offline
+  worker or coordinator prevents starting a run; a busy GPU can still queue.
+- Basic settings are shown first; advanced settings retain their existing values
+  when collapsed. Label Studio semantic datasets determine DeepLab class count
+  and ignore index. CPU memory is not estimated by the GPU VRAM preview.
+- Run comparison presents recorded metrics without automatic conclusions about
+  model quality or overfitting. Duplicate run names include time and run ID.
+- Dataset details fetch paged thumbnail summaries and load annotations only
+  for the selected image. Duplicate groups compare normalized pixels across
+  splits; they are not similarity detection and never move or delete images.
+- New test evaluations are independent queued jobs. Their results show the
+  dataset version, image counts and measured metrics without recommending a
+  winning model. Older test artifacts remain separate.
+- Batch prediction and evaluation results belong to the requesting user.
+  Batch results expire after 24 hours; evaluation results persist until
+  deleted. Notifications poll only while the page is visible.
+- Model API controls may show unavailable. Do not enable public endpoints until
+  the backend storage-quota guard and all deployment/security checks pass.
 
 ## Verification
 

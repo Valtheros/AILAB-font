@@ -8,13 +8,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { MetricsCharts, formatMetricValue, type MetricRow } from "@/components/workspace/metrics-charts";
 import { ModelTestDialog } from "@/components/tasks/model-test-dialog";
-import { InsightList, type Insight } from "@/components/tasks/insight-list";
+import { EvaluationPanel } from "@/components/tasks/evaluation-panel";
+import { ModelApiPanel } from "@/components/tasks/model-api-panel";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
 import type { TrainingTask } from "@/lib/trainingConfig";
 import { useLanguage } from "@/components/language-provider";
-import { ComputeJob, computeActive, computeMessage } from '@/lib/compute';
-import { useRouter } from 'next/navigation';
+import { ComputeJob, computeActive, computeMessage, executionReadiness } from '@/lib/compute';
+import { useComputeAvailability } from '@/lib/use-compute-availability';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 const API_URL = apiBaseUrl();
 const TERMINAL = new Set(["completed", "exited", "failed", "stopped", "cancelled", "not_found"]);
@@ -40,7 +42,13 @@ function bytes(size: number) {
 export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: () => Promise<void> }) {
   const { t, language } = useLanguage();
   const router = useRouter();
+  const search = useSearchParams();
+  const evaluationJob = search.get('evaluationJob');
+  const predictionJob = search.get('predictionJob');
+  const predictionKind = search.get('predictionKind') === 'batch_predict' ? 'batch' : 'single';
   const [computeJob, setComputeJob] = useState<ComputeJob | null>(task.computeJob ?? null);
+  const computeAvailability = useComputeAvailability(computeJob?.status === 'queued');
+  const queuedReadiness = computeJob?.status === 'queued' ? executionReadiness(computeJob.requestedExecution, computeAvailability) : null;
   const computeJobId = task.computeJob?.id;
   useEffect(() => {
     if (!computeJobId) return;
@@ -68,10 +76,16 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   const [showLogs, setShowLogs] = useState(!TERMINAL.has(task.status));
   const [stopping, setStopping] = useState(false);
   const [streamError, setStreamError] = useState("");
-  const [testOpen, setTestOpen] = useState(false);
+  const [testOpen, setTestOpen] = useState(Boolean(predictionJob));
   const [testEval, setTestEval] = useState<{ test_accuracy?: number; test_loss?: number; test_images?: number; checkpoint?: string; test_map50?: number; test_map50_95?: number; test_precision?: number; test_recall?: number; test_pixel_accuracy?: number; test_mean_iou?: number } | null>(null);
-  const [insights, setInsights] = useState<Insight[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (predictionJob) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Open the job selected by a notification.
+      setTestOpen(true);
+    }
+  }, [predictionJob]);
 
   useEffect(() => {
     fetch(`${API_URL}/api/tasks/${encodeURIComponent(task.id)}/logs`)
@@ -83,8 +97,8 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     if (!task.runSlug) return;
     fetch(`${API_URL}/api/metrics/${encodeURIComponent(task.runSlug)}`)
       .then((response) => response.ok ? response.json() : { metrics: [] })
-      .then((data) => { setMetrics(data.metrics ?? []); setInsights(data.insights ?? []); })
-      .catch(() => { setMetrics([]); setInsights([]); });
+      .then((data) => setMetrics(data.metrics ?? []))
+      .catch(() => setMetrics([]));
   }, [task.runSlug]);
 
   // Optional held-out test result, written by the trainer only when the
@@ -212,13 +226,24 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
   return <div className="space-y-4">
     <div className="console-surface flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
       <div className="flex h-11 w-11 items-center justify-center rounded-md border"><Activity className={`h-5 w-5 ${active ? "animate-pulse" : ""}`} /></div>
-      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{task.modelName}</p><StatusBadge tone={tone(status)}>{status}</StatusBadge>{streamError && <StatusBadge tone="warning">{streamError}</StatusBadge>}</div><p className="mt-1 break-words text-sm text-muted-foreground">{task.displayName}{task.datasetName ? ` - ${task.datasetName}` : ""}</p></div>
+      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{task.modelName}</p><StatusBadge tone={tone(status)}>{status}</StatusBadge>{streamError && <StatusBadge tone="warning">{streamError}</StatusBadge>}</div><p className="mt-1 break-words text-sm text-muted-foreground">{task.displayName}{task.datasetName ? ` - ${task.datasetCollectionName || task.datasetName}${task.datasetVersion ? ` v${task.datasetVersion}` : ""}` : ""}</p>
+        {task.datasetProvenance === 'unverified' && <p className="mt-1 text-xs text-muted-foreground">{!task.datasetContentSha256
+          ? (language === 'th' ? 'ไม่มีข้อมูลยืนยันเนื้อหา dataset สำหรับงานนี้' : 'Dataset verification metadata is unavailable for this run.')
+          : active
+            ? (language === 'th' ? 'กำลังรอยืนยันข้อมูลต้นทางเมื่อการฝึกเสร็จ' : 'Source verification is pending completion of training.')
+            : ['cancelled', 'stopped', 'failed'].includes(status)
+              ? (language === 'th' ? 'งานหยุดก่อนการยืนยันข้อมูลต้นทางเสร็จสมบูรณ์' : 'Source verification did not complete because the run stopped.')
+              : (language === 'th' ? 'ยังยืนยันข้อมูลต้นทางของงานนี้ไม่ได้' : 'The source dataset for this run could not be verified.')}</p>}
+        {task.datasetStatus === 'deleted' && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{language === 'th' ? 'ชุดข้อมูลเวอร์ชันนี้ถูกลบแล้ว จึงไม่สามารถใช้ข้อมูลเดิมเทรนหรือประเมินซ้ำได้' : 'This dataset version was removed and cannot be used for retraining or reevaluation.'}</p>}
+      </div>
       <div className="flex flex-wrap items-center gap-4"><div><p className="text-2xl font-semibold">{Math.round(epoch)}/{task.epochs}</p><p className="text-sm text-muted-foreground">epochs</p></div>{canTestModel && <Button onClick={() => setTestOpen(true)}><Sparkles className="h-4 w-4" />Test Model</Button>}{active && <Button variant="destructive" onClick={stop} disabled={stopping}><Square className="h-4 w-4" />{stopping ? "Stopping..." : "Stop Run"}</Button>}</div>
     </div>
     {computeJob && <div className="space-y-2 border-b pb-4 text-sm">
       <p>{language === 'th' ? 'อุปกรณ์ที่เลือก' : 'Requested device'}: {computeJob.requestedExecution.mode === 'gpu' ? computeJob.requestedExecution.gpuUuid : computeJob.requestedExecution.mode === 'cpu' ? 'CPU' : 'Auto GPU'}</p>
       <p>{language === 'th' ? 'อุปกรณ์ที่ใช้จริง' : 'Assigned device'}: {computeJob.assignedGpu?.name || computeJob.assignedGpu?.uuid || (computeJob.requestedExecution.mode === 'cpu' && computeJob.status !== 'queued' ? 'CPU' : '—')}</p>
-      {computeJob.queueReason && <p role="status" className="text-muted-foreground">{computeMessage(computeJob.queueReason, language === 'th')}</p>}
+      {queuedReadiness === 'offline' && <p role="status" className="text-amber-600 dark:text-amber-400">{t('tasks.queue.offline')}</p>}
+      {queuedReadiness === 'unavailable' && <p role="status" className="text-amber-600 dark:text-amber-400">{t('tasks.queue.unavailable')}</p>}
+      {computeJob.queueReason && !(queuedReadiness === 'offline' && computeJob.queueReason === 'worker_offline') && <p role="status" className="text-muted-foreground">{computeMessage(computeJob.queueReason, language === 'th')}</p>}
       {computeJob.errorCode && <p role="alert" className="text-destructive">{computeMessage(computeJob.errorCode, language === 'th', computeJob.error)}</p>}
       {['failed','stopped','cancelled','completed'].includes(status) && <Button variant="outline" onClick={async () => {
         const response = await fetch(`${API_URL}/api/tasks/${task.id}/clone`, { method: 'POST' });
@@ -231,7 +256,8 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><CircleGauge className="h-5 w-5" />Latest Metrics</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">{(keys.length ? keys.slice(0, 8) : ["train/loss", "val/loss", "val/accuracy", "lr"]).map((key) => <div key={key} className="rounded-md border p-3"><p className="break-words text-xs text-muted-foreground">{key}</p><p className="mt-2 text-xl font-semibold">{formatMetricValue(key, latest?.[key])}</p></div>)}</CardContent></Card>
     </div>
     {testEvalCard}
-    {insights.length > 0 && <InsightList insights={insights} titleKey="insight.section.title" />}
+    {status === "completed" && task.runSlug && <EvaluationPanel key={`evaluation:${task.runSlug}:${evaluationJob ?? ''}`} runSlug={task.runSlug} modelType={task.modelType} taskType={task.taskType} initialJobId={evaluationJob} />}
+    {status === "completed" && task.runSlug && <ModelApiPanel key={`model-api:${task.runSlug}`} runSlug={task.runSlug} />}
     {metrics.length > 0 && <MetricsCharts metrics={metrics} />}
     {yoloPlots.length > 0 && (
       <Card>
@@ -266,10 +292,13 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     {showLogs && <Card><CardHeader><CardTitle className="flex items-center gap-2"><Terminal className="h-5 w-5" />Logs</CardTitle></CardHeader><CardContent><div ref={logRef} className="h-[460px] overflow-y-auto rounded-md border bg-zinc-950 p-5 font-mono text-sm leading-relaxed text-zinc-100"><pre className="whitespace-pre-wrap">{logs || (active ? t("tasks.logs.preparing") : "No logs available.")}</pre></div></CardContent></Card>}
     {canTestModel && task.runSlug && (
       <ModelTestDialog
+        key={`prediction:${task.runSlug}:${predictionJob ?? ''}:${predictionKind}`}
         open={testOpen}
         onOpenChange={setTestOpen}
         runSlug={task.runSlug}
         modelName={task.modelName}
+        initialJobId={predictionJob}
+        initialMode={predictionKind}
       />
     )}
   </div>;

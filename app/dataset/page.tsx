@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/workspace/empty-state";
+import { LoadingState } from "@/components/workspace/loading-state";
 import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import {
@@ -65,7 +66,7 @@ interface ExportCacheEntry {
 
 interface AnnotationStats {
   images?: number;
-  classes?: number;
+  classes?: number | null;
   yolo_boxes?: number;
   yolo_polygons?: number;
   coco_boxes?: number;
@@ -77,6 +78,7 @@ interface ImportProfile {
   tasks: string[];
   formats: string[];
   classes: string[];
+  classes_known?: boolean;
   image_count: number;
   source_format: string;
   dataset_task?: string;
@@ -96,8 +98,12 @@ interface ImportProfile {
 interface Dataset {
   id: string;
   name: string;
+  collectionId?: string | null;
+  collectionName?: string | null;
+  version?: number | null;
   images: number;
   classes: string[];
+  classesKnown?: boolean;
   createdAt: string;
   size: string;
   tasks: string[];
@@ -124,10 +130,12 @@ interface DatasetTagPreference {
 const DATASET_TAGS_STORAGE_KEY = "ailab.dataset-display-tags.v1";
 
 function datasetClassNames(dataset: Dataset) {
-  return dataset.classes.filter((className) => !/^\d+$/.test(className.trim()));
+  return dataset.classes;
 }
 
 const API_URL = apiBaseUrl();
+const MAX_DATASET_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+const UPLOAD_IDLE_TIMEOUT_MS = 60_000;
 
 function formatLabel(value?: string) {
   return value ? value.replaceAll("_", " ") : "unknown";
@@ -178,10 +186,11 @@ function normalizeUploadMessage(message: string) {
 }
 
 export default function DatasetPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadStage, setUploadStage] = useState<"uploading" | "inspecting" | "importing">("uploading");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<
     "idle" | "uploading" | "success" | "error"
@@ -190,14 +199,20 @@ export default function DatasetPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingUploadToken, setPendingUploadToken] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<{ datasetName: string; profile: ImportProfile } | null>(null);
+  const [collectionChoice, setCollectionChoice] = useState("new");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<{ runCount: number; activeCount: number } | null>(null);
+  const deleteRequest = useRef(0);
   const [classDialog, setClassDialog] = useState<{ name: string; classes: string[] } | null>(null);
   const [tagDialog, setTagDialog] = useState<Dataset | null>(null);
   const [tagPreferences, setTagPreferences] = useState<Record<string, DatasetTagPreference>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadRequestRef = useRef<XMLHttpRequest | null>(null);
+
+  useEffect(() => () => uploadRequestRef.current?.abort(), []);
 
   useEffect(() => {
     try {
@@ -260,17 +275,46 @@ export default function DatasetPage() {
     const formData = new FormData();
     formData.append("file", file);
     const xhr = new XMLHttpRequest();
+    uploadRequestRef.current = xhr;
 
     return new Promise<T>((resolve, reject) => {
+      let idleTimer: ReturnType<typeof setTimeout> | undefined;
+      let stalled = false;
+      let lastUploadedBytes = 0;
+      const clearIdleTimer = () => clearTimeout(idleTimer);
+      const resetIdleTimer = () => {
+        clearIdleTimer();
+        idleTimer = setTimeout(() => {
+          stalled = true;
+          xhr.abort();
+        }, UPLOAD_IDLE_TIMEOUT_MS);
+      };
       xhr.upload.addEventListener("progress", (event) => {
+        if (event.loaded > lastUploadedBytes) {
+          lastUploadedBytes = event.loaded;
+          resetIdleTimer();
+        }
         if (event.lengthComputable) {
           setUploadProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      });
+      xhr.upload.addEventListener("load", () => {
+        clearIdleTimer();
+        setUploadStage("inspecting");
+        setUploadMessage(t("dataset.upload.inspecting").replace("{name}", file.name));
+      });
+      xhr.addEventListener("readystatechange", () => {
+        if (xhr.readyState >= 2 && xhr.status === 413) {
+          reject(new Error(t("dataset.upload.tooLargeProxy")));
+          xhr.abort();
         }
       });
       xhr.addEventListener("load", () => {
         try {
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve(parseJsonText(xhr.responseText, `${failureLabel} returned an invalid response`));
+          } else if (xhr.status === 413) {
+            reject(new Error(t("dataset.upload.tooLargeProxy")));
           } else {
             const data = parseJsonText<{ detail?: string }>(
               xhr.responseText || "{}",
@@ -282,9 +326,21 @@ export default function DatasetPage() {
           reject(error instanceof Error ? error : new Error(String(error)));
         }
       });
-      xhr.addEventListener("error", () => reject(new Error("Network error")));
-      xhr.open("POST", `${API_URL}${endpoint}`);
-      xhr.send(formData);
+      xhr.addEventListener("error", () => reject(new Error(t("dataset.upload.networkError"))));
+      xhr.addEventListener("abort", () => reject(new Error(t(stalled ? "dataset.upload.stalled" : "dataset.upload.cancelled"))));
+      xhr.addEventListener("loadend", () => {
+        clearIdleTimer();
+        if (uploadRequestRef.current === xhr) uploadRequestRef.current = null;
+      });
+      try {
+        xhr.open("POST", `${API_URL}${endpoint}`);
+        resetIdleTimer();
+        xhr.send(formData);
+      } catch (error) {
+        clearIdleTimer();
+        if (uploadRequestRef.current === xhr) uploadRequestRef.current = null;
+        reject(error);
+      }
     });
   };
 
@@ -295,13 +351,23 @@ export default function DatasetPage() {
       return;
     }
 
+    if (file.size > MAX_DATASET_UPLOAD_BYTES) {
+      setPendingFile(null);
+      setPendingUploadToken(null);
+      setImportPreview(null);
+      setUploadStatus("error");
+      setUploadMessage(t("dataset.upload.tooLargeApp"));
+      return;
+    }
+
     setPendingFile(file);
     setPendingUploadToken(null);
     setImportPreview(null);
     setIsUploading(true);
+    setUploadStage("uploading");
     setUploadStatus("uploading");
     setUploadProgress(0);
-    setUploadMessage(`Inspecting ${file.name}...`);
+    setUploadMessage(t("dataset.upload.uploading").replace("{name}", file.name));
 
     try {
       const result = await sendDatasetZip<{ dataset_name: string; profile: ImportProfile; uploadToken: string }>(
@@ -310,6 +376,9 @@ export default function DatasetPage() {
         "Dataset inspection",
       );
       setImportPreview({ datasetName: result.dataset_name, profile: result.profile });
+      const matches = new Map(datasets.filter((dataset) => dataset.collectionId && dataset.collectionName === result.dataset_name)
+        .map((dataset) => [dataset.collectionId!, dataset.collectionName!]));
+      setCollectionChoice(matches.size === 1 ? [...matches.keys()][0] : "new");
       setPendingUploadToken(result.uploadToken);
       setUploadStatus("success");
       setUploadProgress(100);
@@ -327,6 +396,7 @@ export default function DatasetPage() {
   const importFile = async () => {
     if (!pendingFile || !pendingUploadToken) return;
     setIsUploading(true);
+    setUploadStage("importing");
     setUploadStatus("uploading");
     setUploadProgress(0);
     setUploadMessage(`Importing ${pendingFile.name}...`);
@@ -335,7 +405,7 @@ export default function DatasetPage() {
       const response = await fetch(`${API_URL}/api/datasets/import`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ uploadToken: pendingUploadToken }),
+        body: JSON.stringify({ uploadToken: pendingUploadToken, collectionId: collectionChoice === "new" ? null : collectionChoice }),
       });
       const result = parseJsonText<{ dataset_name?: string; tasks?: string[]; detail?: string }>(
         await response.text(), "Dataset import returned an invalid response",
@@ -375,6 +445,8 @@ export default function DatasetPage() {
       }
       setDeleteError("");
       setDeleteConfirm(null);
+      setDeleteImpact(null);
+      deleteRequest.current += 1;
       await fetchDatasets();
     } catch (error) {
       console.error("Failed to delete dataset:", error);
@@ -383,6 +455,23 @@ export default function DatasetPage() {
       );
     }
   };
+
+  const prepareDelete = async (dataset: Dataset) => {
+    const request = ++deleteRequest.current;
+    setDeleteConfirm(dataset.id);
+    setDeleteImpact(null);
+    setDeleteError("");
+    try {
+      const response = await fetch(`${API_URL}/api/datasets/${encodeURIComponent(dataset.name)}/impact`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Could not check dataset usage.");
+      if (request === deleteRequest.current) setDeleteImpact(result);
+    } catch (error) {
+      if (request === deleteRequest.current) setDeleteError(error instanceof Error ? error.message : "Could not check dataset usage.");
+    }
+  };
+
+  const jsonError = uploadStatus === 'error' ? uploadMessage.match(/Could not read COCO annotation file '([^']+)'\. Check that the JSON is valid:/) : null;
 
   return (
     <MainLayout>
@@ -428,6 +517,7 @@ export default function DatasetPage() {
                 ref={fileInputRef}
                 type="file"
                 accept=".zip"
+                disabled={isUploading}
                 className="hidden"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
@@ -444,6 +534,7 @@ export default function DatasetPage() {
                 onDrop={(event) => {
                   event.preventDefault();
                   setIsDragging(false);
+                  if (isUploading) return;
                   const file = event.dataTransfer.files?.[0];
                   if (file) inspectFile(file);
                 }}
@@ -458,14 +549,24 @@ export default function DatasetPage() {
                   {uploadStatus === "uploading" ? (
                     <>
                       <Archive className="mb-4 h-10 w-10 animate-pulse text-muted-foreground" />
-                      <StatusBadge tone="warning">Working</StatusBadge>
+                      <StatusBadge tone="warning">{t("dataset.upload.working")}</StatusBadge>
                       <p className="mt-3 font-medium">{uploadMessage}</p>
-                      <div className="mt-4 w-full max-w-sm">
-                        <Progress value={uploadProgress} className="h-2" />
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          {uploadProgress}%
-                        </p>
-                      </div>
+                      {uploadStage === "uploading" && (
+                        <div className="mt-4 w-full max-w-sm">
+                          <Progress value={uploadProgress} className="h-2" />
+                          <p className="mt-2 text-sm text-muted-foreground">{uploadProgress}%</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{t("dataset.upload.stallHint")}</p>
+                        </div>
+                      )}
+                      {uploadStage === "uploading" && (
+                        <Button variant="outline" size="sm" className="mt-4" onClick={(event) => {
+                          event.stopPropagation();
+                          uploadRequestRef.current?.abort();
+                        }}>
+                          <X className="h-4 w-4" />
+                          {t("dataset.upload.cancel")}
+                        </Button>
+                      )}
                     </>
                   ) : uploadStatus === "success" ? (
                     <>
@@ -488,10 +589,11 @@ export default function DatasetPage() {
                   ) : uploadStatus === "error" ? (
                     <>
                       <AlertCircle className="mb-4 h-10 w-10 text-red-500" />
-                      <StatusBadge tone="danger">Upload failed</StatusBadge>
-                      <p className="mt-3 max-h-40 max-w-lg overflow-y-auto whitespace-pre-wrap break-words px-1 text-sm font-medium leading-relaxed sm:text-base">
-                        {uploadMessage}
+                      <StatusBadge tone="danger">{t("dataset.upload.failed")}</StatusBadge>
+                      <p role="alert" className="mt-3 max-h-40 max-w-lg overflow-y-auto whitespace-pre-wrap break-words px-1 text-sm font-medium leading-relaxed sm:text-base">
+                        {jsonError ? (language === 'th' ? `ไฟล์ ${jsonError[1]} ไม่ใช่ JSON ที่ถูกต้อง กรุณาตรวจสอบไฟล์ annotation แล้วลองใหม่` : `The annotation file ${jsonError[1]} is not valid JSON. Check the file and try again.`) : uploadMessage}
                       </p>
+                      {jsonError && <details className="mt-2 max-w-lg text-left text-xs text-muted-foreground" onClick={(event) => event.stopPropagation()}><summary className="cursor-pointer">{language === 'th' ? 'รายละเอียดทางเทคนิค' : 'Technical details'}</summary><p className="mt-2 break-words">{uploadMessage}</p></details>}
                       <Button
                         variant="outline"
                         size="sm"
@@ -502,7 +604,7 @@ export default function DatasetPage() {
                         }}
                       >
                         <Upload className="h-4 w-4" />
-                        Choose another ZIP
+                        {t("dataset.upload.chooseAnother")}
                       </Button>
                     </>
                   ) : (
@@ -567,9 +669,12 @@ export default function DatasetPage() {
                   </div>
                   <div className="grid gap-2 sm:grid-cols-3">
                     <StatusBadge>{importPreview.profile.image_count.toLocaleString()} images</StatusBadge>
-                    <StatusBadge>{importPreview.profile.classes.length} classes</StatusBadge>
+                    <StatusBadge>{importPreview.profile.classes_known === false
+                      ? (language === "th" ? "ยังไม่ทราบจำนวนคลาส" : "Class count not yet known")
+                      : `${importPreview.profile.classes.length} ${language === "th" ? "คลาส" : "classes"}`}</StatusBadge>
                     <StatusBadge>{importPreview.profile.ready_models?.length ?? 0} ready models</StatusBadge>
                   </div>
+                  {importPreview.profile.normalized_formats.includes("semantic_masks") && <p className="text-xs text-muted-foreground">{language === "th" ? "จำนวนคลาสไม่นับพื้นหลัง สำหรับการฝึก Mask classes ต้องรวมพื้นหลังด้วย" : "Class count excludes background. Include background when setting Mask classes for training."}</p>}
                   <div className="space-y-2">
                     <p className="text-xs font-medium uppercase text-muted-foreground">Compatible models</p>
                     <div className="flex flex-wrap gap-2">
@@ -587,6 +692,20 @@ export default function DatasetPage() {
                       ))}
                     </div>
                   )}
+                  <div className="space-y-2">
+                    <label htmlFor="dataset-collection" className="text-sm font-medium">
+                      {language === "th" ? "บันทึกเป็น" : "Save as"}
+                    </label>
+                    <select id="dataset-collection" value={collectionChoice} onChange={(event) => setCollectionChoice(event.target.value)}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" disabled={isUploading}>
+                      <option value="new">{language === "th" ? "ชุดข้อมูลใหม่" : "New dataset"}</option>
+                      {[...new Map(datasets.filter((dataset) => dataset.collectionId)
+                        .map((dataset) => [dataset.collectionId!, dataset.collectionName || dataset.name])).entries()].map(([id, name]) => (
+                          <option key={id} value={id}>{language === "th" ? "เวอร์ชันใหม่ของ" : "New version of"} {name} ({id.slice(0, 8)})</option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">{language === "th" ? "ข้อมูลเวอร์ชันเดิมยังคงอยู่ เลขเวอร์ชันที่จองแล้วอาจข้ามได้เมื่อยกเลิก" : "Existing versions are preserved. Version numbers reserved by cancelled imports may be skipped."}</p>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={importFile} disabled={isUploading || !pendingFile || !pendingUploadToken}>
                       <Upload className="h-4 w-4" />
@@ -638,11 +757,7 @@ export default function DatasetPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <EmptyState
-                icon={RefreshCw}
-                title="Loading datasets"
-                description={t("common.loadingBackendInventory")}
-              />
+              <LoadingState compact icon={Database} title={language === "th" ? "กำลังโหลดชุดข้อมูล" : "Loading datasets"} />
             ) : loadError ? (
               <EmptyState
                 icon={AlertCircle}
@@ -677,11 +792,11 @@ export default function DatasetPage() {
                         <Database className="h-5 w-5 text-muted-foreground" />
                       </div>
                       <div className="min-w-0">
-                        <h2 className="break-words font-medium">{dataset.name}</h2>
+                        <h2 className="break-words font-medium">{dataset.collectionName || dataset.name}{dataset.version ? ` · v${dataset.version}` : ""}</h2>
                         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                           <span>{dataset.images.toLocaleString()} images</span>
                           <span>{dataset.size}</span>
-                          <span>{dataset.createdAt}</span>
+                          <span>{new Date(dataset.createdAt).toLocaleString(language === "th" ? "th-TH" : "en-US")}</span>
                         </div>
                         <div className="mt-3 flex items-center gap-2">
                           <p className="text-xs font-medium uppercase text-muted-foreground">Display tags</p>
@@ -708,6 +823,7 @@ export default function DatasetPage() {
                               {displayModelTags(dataset, tagPreferences[dataset.id]).length === 0 && <span className="text-xs text-muted-foreground">No model tags</span>}
                             </div>
                           </div>
+                          {dataset.classesKnown === false && <p className="text-xs text-muted-foreground">{language === "th" ? "ยังไม่ทราบจำนวนคลาส" : "Class count not yet known"}</p>}
                           {dataset.classes?.length > 0 && (
                             <div>
                               <p className="text-xs font-medium text-muted-foreground">Classes ({datasetClassNames(dataset).length})</p>
@@ -733,13 +849,16 @@ export default function DatasetPage() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 self-end lg:self-auto">
+                    <div className="flex flex-col items-end gap-2 self-end lg:self-auto">
+                      <div className="flex items-center gap-2">
+                      <Button asChild variant="outline" size="sm"><Link href={`/dataset/${encodeURIComponent(dataset.id)}`}><FolderOpen className="h-4 w-4" />{language === "th" ? "รายละเอียด" : "Details"}</Link></Button>
                       {deleteConfirm === dataset.id ? (
                         <>
                           <Button
                             variant="destructive"
                             size="sm"
                             onClick={() => handleDelete(dataset.name)}
+                            disabled={!deleteImpact || deleteImpact.activeCount > 0}
                           >
                             Confirm delete
                           </Button>
@@ -747,7 +866,7 @@ export default function DatasetPage() {
                             aria-label="Cancel delete"
                             variant="ghost"
                             size="icon"
-                            onClick={() => setDeleteConfirm(null)}
+                            onClick={() => { deleteRequest.current += 1; setDeleteConfirm(null); setDeleteImpact(null); }}
                           >
                             <X className="h-4 w-4" />
                           </Button>
@@ -757,10 +876,19 @@ export default function DatasetPage() {
                           aria-label={`Delete ${dataset.name}`}
                           variant="ghost"
                           size="icon"
-                          onClick={() => setDeleteConfirm(dataset.id)}
+                          onClick={() => prepareDelete(dataset)}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
+                      )}
+                      </div>
+                      {deleteConfirm === dataset.id && (
+                        <p className="max-w-xs text-right text-xs text-muted-foreground" role="status">
+                          {deleteImpact ? (language === "th"
+                            ? `มี ${deleteImpact.runCount} งานที่อ้างอิงข้อมูลนี้ ลบแล้วจะเทรนหรือประเมินซ้ำจากชุดนี้ไม่ได้${deleteImpact.activeCount ? " กรุณาหยุดงานที่ใช้งานอยู่ก่อน" : ""}`
+                            : `${deleteImpact.runCount} runs reference this dataset. Deleting it prevents retraining or evaluation from this version.${deleteImpact.activeCount ? " Stop active jobs first." : ""}`)
+                            : (language === "th" ? "กำลังตรวจสอบงานที่เกี่ยวข้อง" : "Checking dataset usage")}
+                        </p>
                       )}
                     </div>
                   </article>

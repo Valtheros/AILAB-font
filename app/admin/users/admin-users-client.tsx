@@ -644,10 +644,11 @@ export function AdminUsersClient({
             </Button>
             <div className="flex gap-2">
               <Input placeholder="Target user ID" value={cleanupDialog?.targetUserId ?? ""} onChange={(event) => setCleanupDialog((state) => state ? { ...state, targetUserId: event.target.value } : state)} />
-              <Button disabled={isPending || !cleanupDialog?.targetUserId.trim() || (cleanupDialog?.impact.activeJobs.length ?? 0) > 0} onClick={() => runAction(() => transferUserResourcesAction(cleanupDialog!.user.id, cleanupDialog!.targetUserId.trim()), () => setCleanupDialog(null))} variant="outline">
+              <Button disabled={isPending || !cleanupDialog?.user.banned || !cleanupDialog?.targetUserId.trim() || (cleanupDialog?.impact.activeJobs.length ?? 0) > 0} onClick={() => runAction(() => transferUserResourcesAction(cleanupDialog!.user.id, cleanupDialog!.targetUserId.trim()), () => setCleanupDialog(null))} variant="outline">
                 Transfer
               </Button>
             </div>
+            {!cleanupDialog?.user.banned && <p className="text-sm text-muted-foreground">Disable this account before transferring its data.</p>}
           </div>
           <DialogFooter>
             <DialogClose asChild><Button disabled={isPending} variant="outline">Cancel</Button></DialogClose>

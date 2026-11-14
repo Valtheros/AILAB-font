@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ListTodo, TriangleAlert } from "lucide-react";
 import { MainLayout } from "@/components/MainLayout";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/workspace/empty-state";
+import { LoadingState } from "@/components/workspace/loading-state";
 import { PageHeader } from "@/components/workspace/page-header";
 import { TaskConfiguration } from "@/components/tasks/task-configuration";
 import { TaskRun } from "@/components/tasks/task-run";
@@ -165,8 +166,9 @@ export default function TaskDetailPage() {
   const changeConfig = (next: TrainingConfig, markDirty = true) => {
     setConfig(next); latestConfig.current = next; setError("");
     if (!markDirty) return;
-    setDirty(true);
-    if (!saveController.current) setSaveState("unsaved");
+    const changed = savedPayload.current === null || JSON.stringify(taskDraftPayload(next)) !== savedPayload.current;
+    setDirty(Boolean(saveController.current) || changed);
+    if (!saveController.current) setSaveState(changed ? "unsaved" : "saved");
   };
 
   const train = async () => {
@@ -190,7 +192,7 @@ export default function TaskDetailPage() {
   return <MainLayout><div className="space-y-6">
     <PageHeader title={task?.displayName || (taskId === "new" ? "New Training Task" : "Training Task")} description={t(!task || task.status === "draft" ? "tasks.draft.description" : "tasks.run.description")} actions={<Button asChild variant="outline" size="sm"><Link href="/tasks"><ArrowLeft className="h-4 w-4" />Tasks</Link></Button>} />
     {error && <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
-    {loading ? <EmptyState icon={Loader2} title="Loading task" description="Reading the latest task state." />
+    {loading ? <LoadingState icon={ListTodo} title={language === "th" ? "กำลังโหลดงานเทรน" : "Loading task"} description={language === "th" ? "กำลังตรวจสอบสถานะล่าสุด" : "Checking the latest status"} />
       : taskId !== "new" && !task ? <EmptyState icon={TriangleAlert} title="Task unavailable" description="This task does not exist or belongs to another user." />
       : (!task || task.status === "draft") && config ? <TaskConfiguration config={config} onChange={changeConfig} onSave={() => save(config)} onTrain={train} saveState={saveState} starting={starting} />
       : task ? <TaskRun key={task.id} task={task} onRefresh={load} /> : null}
