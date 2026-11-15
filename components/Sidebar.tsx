@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   HardDrive,
   X,
+  BookOpenCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -60,9 +61,14 @@ export function Sidebar({ isOpen, onClose, menuButtonRef }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = authClient.useSession();
   const { language } = useLanguage();
+  const thai = language === "th";
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
-  const visibleNavItems = isAdmin ? [...navItems, adminNavItem, { title: 'Compute', href: '/admin/compute', icon: ShieldCheck },
-    { title: language === 'th' ? 'พื้นที่ผู้ใช้' : 'User storage', href: '/admin/storage', icon: HardDrive }] : navItems;
+  const visibleNavItems = [
+    ...navItems,
+    { title: thai ? "คู่มือ" : "Guide", href: "/guide", icon: BookOpenCheck },
+    ...(isAdmin ? [adminNavItem, { title: 'Compute', href: '/admin/compute', icon: ShieldCheck },
+      { title: thai ? 'พื้นที่ผู้ใช้' : 'User storage', href: '/admin/storage', icon: HardDrive }] : []),
+  ];
 
   // Close mobile sidebar when route changes
   useEffect(() => {
@@ -78,10 +84,10 @@ export function Sidebar({ isOpen, onClose, menuButtonRef }: SidebarProps) {
     return () => desktop.removeEventListener("change", closeOnDesktop);
   }, [isOpen, onClose]);
 
-  const navigation = <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+  const navigation = <nav aria-label={thai ? "เมนูหลัก" : "Main navigation"} className="flex-1 space-y-1 overflow-y-auto p-3">
     {visibleNavItems.map((item) => {
       const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-      return <Link key={item.href} href={item.href} onClick={onClose}
+      return <Link key={item.href} href={item.href} onClick={onClose} aria-current={isActive ? "page" : undefined}
         className={cn("flex items-center gap-3 rounded-md border px-3 py-2.5 text-sm font-medium transition-colors",
           isActive ? "border-foreground bg-foreground text-background" : "border-transparent text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground")}>
         <item.icon className="h-5 w-5 shrink-0" /><span>{item.title}</span>
@@ -111,6 +117,7 @@ export function Sidebar({ isOpen, onClose, menuButtonRef }: SidebarProps) {
 
 // Mobile menu button component
 export function MobileMenuButton({ onClick, buttonRef }: { onClick: () => void; buttonRef: RefObject<HTMLButtonElement | null> }) {
+  const { language } = useLanguage();
   return (
     <Button
       variant="ghost"
@@ -118,7 +125,7 @@ export function MobileMenuButton({ onClick, buttonRef }: { onClick: () => void; 
       onClick={onClick}
       ref={buttonRef}
       className="lg:hidden"
-      aria-label="Open menu"
+      aria-label={language === "th" ? "เปิดเมนู" : "Open menu"}
     >
       <Menu className="h-5 w-5" />
     </Button>

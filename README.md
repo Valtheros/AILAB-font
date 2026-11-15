@@ -78,6 +78,46 @@ emails are sent as `AILAB <SMTP_USER>`.
 
 ## Authentication
 
+### Public Landing And Private Workspace
+
+- `/` shows the compact landing; a validated session redirects to `/dashboard`.
+  `/overview` always shows that same landing, including for signed-in members.
+  The landing uses public navigation without the workspace sidebar,
+  account controls or notification polling. The public header contains only
+  the overview logo link and language/theme controls. The hero's Enter AILAB leads to Dashboard,
+  requiring login first for guests. Guests never request private data.
+- `/guide` remains publicly readable. A validated, email-verified server session
+  selects `MainLayout`, retaining the workspace sidebar, account controls and
+  notifications. Guests and unverified accounts get the public header instead.
+  Keep this choice based on the session, not cookie presence; the guide content
+  and tab query parameters are the same in both layouts.
+- `/annotate`, `/dataset`, and `/tasks`, including their exact roots, require
+  login. Their workspaces mount only inside `AuthGate`, after session
+  and email verification. Never place private fetches or polling in the page
+  component above that boundary. Changing users remounts the workspace.
+- Detail routes, Dashboard, Account, Admin, and legacy training routes remain
+  protected. `MainLayout` always requires authentication.
+  Public pages never make the backend proxy, uploads, or training anonymous.
+- Start actions require login, preserving a local callback through signup and
+  verification. `lib/auth-redirect.ts` rejects external, encoded unsafe, and
+  authentication-loop destinations. Keep Label Studio project/transfer query
+  parameters intact; no transfer request is made before authentication.
+- Login/signup redirects use a validated server session, not cookie presence.
+  Sign-out fully navigates to `/` after success so cached authenticated root
+  redirects cannot send the user back into AuthGate. The proxy's cookie check is only an early redirect;
+  backend APIs still validate the session, verification, and ownership.
+- Detailed model/format information remains in Guide, not a second landing
+  catalog. `public/landing/model-workflow.png` is an AI-generated conceptual
+  illustration, not user data or an AILAB prediction. Its generation prompt
+  and provenance are in `docs/landing-image.md`.
+
+Regression checks: `tests/public-access.test.tsx`, `auth-redirect.test.tsx`,
+`public-entrypoints.test.tsx`, `landing-page.test.tsx`, and the mobile sidebar tests. Before deployment,
+check guest navigation without private API traffic, expired cookies, member
+callbacks/sign-out, Label Studio transfer callbacks, and responsive TH/EN views.
+
+### Account Access
+
 Email/password signup requires email verification before users can access the
 workspace. Forgot password uses a six-digit email OTP; the reset form is shown
 only after the OTP is verified. Form validation uses Zod and shows field-level

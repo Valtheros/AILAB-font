@@ -23,6 +23,10 @@ import { useLanguage } from "@/components/language-provider";
 const API_URL = apiBaseUrl();
 
 export default function TaskDetailPage() {
+  return <MainLayout><TaskDetailWorkspace /></MainLayout>;
+}
+
+function TaskDetailWorkspace() {
   const { taskId } = useParams<{ taskId: string }>();
   const router = useRouter();
   const { t, language } = useLanguage();
@@ -189,7 +193,7 @@ export default function TaskDetailPage() {
     }
   };
 
-  return <MainLayout><div className="space-y-6">
+  return <><div className="space-y-6">
     <PageHeader title={task?.displayName || (taskId === "new" ? "New Training Task" : "Training Task")} description={t(!task || task.status === "draft" ? "tasks.draft.description" : "tasks.run.description")} actions={<Button asChild variant="outline" size="sm"><Link href="/tasks"><ArrowLeft className="h-4 w-4" />Tasks</Link></Button>} />
     {error && <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
     {loading ? <LoadingState icon={ListTodo} title={language === "th" ? "กำลังโหลดงานเทรน" : "Loading task"} description={language === "th" ? "กำลังตรวจสอบสถานะล่าสุด" : "Checking the latest status"} />
@@ -214,5 +218,5 @@ export default function TaskDetailPage() {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  </MainLayout>;
+  </>;
 }

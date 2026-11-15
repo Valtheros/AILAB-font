@@ -2,7 +2,7 @@
 
 import { Loader2, LogOut, MailCheck, RefreshCw } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,7 +12,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useLanguage } from "@/components/language-provider";
-import { authClient } from "@/lib/auth-client";
+import { authClient, signOutToHome } from "@/lib/auth-client";
+import { authHref } from "@/lib/auth-redirect";
 
 function callbackFor(pathname: string, search: string) {
   return `${pathname}${search ? `?${search}` : ""}`;
@@ -35,7 +36,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     if (isPending || session) {
       return;
     }
-    router.replace(`/login?callbackURL=${encodeURIComponent(callbackURL)}`);
+    router.replace(authHref("login", callbackURL));
   }, [callbackURL, isPending, router, session]);
 
   async function resendVerificationEmail() {
@@ -122,11 +123,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 Resend link
               </Button>
               <Button
-                onClick={async () => {
-                  await authClient.signOut();
-                  router.push("/login");
-                  router.refresh();
-                }}
+                onClick={signOutToHome}
                 type="button"
                 variant="outline"
               >
@@ -140,5 +137,5 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <Fragment key={session.user.id}>{children}</Fragment>;
 }

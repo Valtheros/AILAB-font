@@ -71,6 +71,10 @@ function statusTone(status: string): StatusTone {
 }
 
 export default function DashboardPage() {
+  return <MainLayout><DashboardWorkspace /></MainLayout>;
+}
+
+function DashboardWorkspace() {
   const { language, t } = useLanguage();
   const [datasets, setDatasets] = useState<Dataset[] | null>(null);
   const [runs, setRuns] = useState<TrainingRun[] | null>(null);
@@ -100,7 +104,7 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <MainLayout>
+    <>
       <div className="flex flex-col gap-6">
         <div className="order-1">
           <PageHeader
@@ -207,6 +211,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-    </MainLayout>
+    </>
   );
 }

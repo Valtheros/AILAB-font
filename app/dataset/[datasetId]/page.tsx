@@ -74,6 +74,10 @@ function Preview({ base, image, thai }: { base: string; image: ImageInfo; thai: 
 }
 
 export default function DatasetDetailsPage() {
+  return <MainLayout><DatasetDetailsWorkspace /></MainLayout>;
+}
+
+function DatasetDetailsWorkspace() {
   const { datasetId } = useParams<{ datasetId: string }>();
   const { language } = useLanguage(); const thai = language === "th";
   const [details, setDetails] = useState<Details | null>(null), [error, setError] = useState("");
@@ -173,7 +177,7 @@ export default function DatasetDetailsPage() {
   const allClasses = Array.from(new Set(Object.values(details?.index.stats ?? {}).flatMap((value) => Object.keys(value.classes)))).sort();
   const change = (callback: () => void) => { callback(); setOffset(0); setSelected(null); setImage(null); };
   const openImage = (item: Summary) => { setSelected(item); setImage(null); setImageError(""); };
-  return <MainLayout><div className="space-y-6">
+  return <div className="space-y-6">
     <Button asChild variant="ghost"><Link href="/dataset"><ArrowLeft className="h-4 w-4" />{thai ? "กลับไป Dataset" : "Back to datasets"}</Link></Button>
     <header className="border-b pb-4"><h1 className="break-words text-2xl font-semibold">{details?.name || (thai ? "รายละเอียด Dataset" : "Dataset details")}{details?.version ? ` · v${details.version}` : ""}</h1>{details?.contentSha256 ? <p className="mt-1 break-all text-xs text-muted-foreground">SHA-256: {details.contentSha256}</p> : details && <p className="mt-1 text-xs text-muted-foreground">{thai ? "ไม่ยืนยันเนื้อหาชุดข้อมูลย้อนหลัง" : "Historical dataset contents are not verified."}</p>}</header>
     {error && <div className="space-y-3"><p role="alert" className="text-sm text-destructive">{error}</p>{!details?.index.ready && <Button variant="outline" onClick={() => void retryLoading()}><RefreshCw className="h-4 w-4" />{thai ? "ลองใหม่" : "Retry"}</Button>}</div>}
@@ -205,5 +209,5 @@ export default function DatasetDetailsPage() {
       {details.index.skipped > 0 && <p className="text-sm text-amber-600 dark:text-amber-400">{thai ? "ภาพที่เปิดไม่ได้ถูกข้าม" : "Unreadable images were skipped"}: {details.index.skipped}</p>}
     </>}
     <Dialog open={selected !== null} onOpenChange={(open) => { if (!open) { setSelected(null); setImage(null); setImageError(""); } }}><DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto"><DialogHeader><DialogTitle className="break-all">{selected?.filename}</DialogTitle><DialogDescription>{selected?.split}</DialogDescription></DialogHeader>{selected && image && <Preview base={`${base}/images/${selected.ordinal}`} image={image} thai={thai} />}{selected && !image && !imageError && <LoadingState compact icon={Images} title={thai ? "กำลังโหลดรายละเอียดภาพ" : "Loading image details"} />}{selected && imageError && <p role="alert" className="text-sm text-destructive">{imageError}</p>}</DialogContent></Dialog>
-  </div></MainLayout>;
+  </div>;
 }

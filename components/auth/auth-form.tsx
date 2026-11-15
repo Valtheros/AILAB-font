@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useLanguage } from "@/components/language-provider";
 import { authClient } from "@/lib/auth-client";
+import { safeCallbackURL } from "@/lib/auth-redirect";
 import {
   authEmailSchema,
   authNameSchema,
@@ -47,13 +48,6 @@ type AuthClientError = {
 };
 type FieldName = "name" | "email" | "password";
 type FieldErrors = Partial<Record<FieldName, string>>;
-
-function safeCallbackURL(value: string | null) {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
-    return "/dashboard";
-  }
-  return value;
-}
 
 function isEmailNotVerifiedError(error: AuthClientError | null | undefined) {
   if (!error) {

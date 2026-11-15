@@ -27,7 +27,7 @@ export function MainLayout({ children, showSidebar = true }: MainLayoutProps) {
           ) : null
         }
       />
-      {showSidebar && <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} menuButtonRef={menuButtonRef} />}
+      {showSidebar && <Suspense fallback={null}><Sidebar isOpen={sidebarOpen} onClose={closeSidebar} menuButtonRef={menuButtonRef} /></Suspense>}
       <main
         className={`pt-16 transition-[padding] duration-300 ${
           showSidebar ? "lg:pl-64" : ""

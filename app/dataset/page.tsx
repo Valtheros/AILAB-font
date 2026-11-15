@@ -186,6 +186,10 @@ function normalizeUploadMessage(message: string) {
 }
 
 export default function DatasetPage() {
+  return <MainLayout><DatasetWorkspace /></MainLayout>;
+}
+
+function DatasetWorkspace() {
   const { t, language } = useLanguage();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -474,7 +478,7 @@ export default function DatasetPage() {
   const jsonError = uploadStatus === 'error' ? uploadMessage.match(/Could not read COCO annotation file '([^']+)'\. Check that the JSON is valid:/) : null;
 
   return (
-    <MainLayout>
+    <>
       <div className="space-y-6">
         <PageHeader
           title="Dataset Management"
@@ -952,6 +956,6 @@ export default function DatasetPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </MainLayout>
+    </>
   );
 }

@@ -11,6 +11,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { I18nText } from "@/components/i18n-text";
+import { safeCallbackURL } from "@/lib/auth-redirect";
 
 type AuthErrorPageProps = {
   searchParams?: Promise<{
@@ -36,13 +37,6 @@ const authErrorCopy: Record<string, { title: string; messageKey: string }> = {
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function safeCallbackURL(value: string | undefined) {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
-    return "/dashboard";
-  }
-  return value;
 }
 
 function errorCopy(error: string | undefined) {

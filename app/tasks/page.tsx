@@ -94,6 +94,10 @@ function TaskCard({ task, onDelete, selectable = false, selected = false, onTogg
 }
 
 export default function TasksPage() {
+  return <MainLayout><TasksWorkspace /></MainLayout>;
+}
+
+function TasksWorkspace() {
   const { t, language } = useLanguage();
   const router = useRouter();
   const [tasks, setTasks] = useState<TrainingTask[]>([]);
@@ -181,7 +185,7 @@ export default function TasksPage() {
   };
 
   return (
-    <MainLayout>
+    <>
       <div className="space-y-6">
         <PageHeader title="Tasks" description={t("tasks.header.description")} actions={
           <Button onClick={() => router.push("/tasks/new")}>
@@ -293,6 +297,6 @@ export default function TasksPage() {
           <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </MainLayout>
+    </>
   );
 }

@@ -11,7 +11,7 @@ export function ModelApiGuide() {
     'curl -H "Authorization: Bearer $AILAB_API_KEY" "https://ai-lab.cs.psu.ac.th/api/v1/jobs/JOB_ID/result"',
     'curl -X POST -H "Authorization: Bearer $AILAB_API_KEY" "https://ai-lab.cs.psu.ac.th/api/v1/jobs/JOB_ID/cancel"',
   ];
-  return <section className="space-y-3 border-y py-5">
+  return <section id="model-api" className="scroll-mt-20 space-y-3 border-y py-5">
     <h2 className="text-lg font-semibold">{thai ? "ใช้งานโมเดลผ่าน API" : "Use a model through the API"}</h2>
     <p className="text-sm text-muted-foreground">{thai ? "เมื่อระบบเปิด Model API แล้ว ให้เปิดใช้งานใน run ที่สำเร็จและสร้าง key ซึ่งแสดงเพียงครั้งเดียว เก็บ key เป็นความลับและใช้เฉพาะผ่าน HTTPS" : "Once Model API is available, enable it on a completed run and create a key, shown once. Keep the key secret and use HTTPS."}</p>
     <p className="text-sm text-muted-foreground">{thai ? "คำขอจะเข้าคิวและคืน 202 พร้อม job ID นำ MODEL_ID จากหน้า run และ JOB_ID จากผลตอบกลับมาแทนในตัวอย่าง" : "Requests are queued and return 202 with a job ID. Replace MODEL_ID with the ID on the run page and JOB_ID with the returned ID."}</p>

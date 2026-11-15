@@ -28,7 +28,7 @@ function text(item: Notification, thai: boolean) {
 
 export function NotificationBell() {
   const { data: session } = authClient.useSession();
-  const userId = session?.user?.id;
+  const userId = session?.user?.emailVerified ? session.user.id : undefined;
   return userId ? <NotificationInbox key={userId} /> : null;
 }
 

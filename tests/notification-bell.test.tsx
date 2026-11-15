@@ -5,7 +5,7 @@ import { NotificationBell } from '@/components/notification-bell';
 const auth = vi.hoisted(() => ({ user: 'alice' }));
 vi.mock('@/components/language-provider', () => ({ useLanguage: () => ({ language: 'en' }) }));
 vi.mock('@/lib/api', () => ({ apiBaseUrl: () => '' }));
-vi.mock('@/lib/auth-client', () => ({ authClient: { useSession: () => ({ data: { user: { id: auth.user } } }) } }));
+vi.mock('@/lib/auth-client', () => ({ authClient: { useSession: () => ({ data: { user: { id: auth.user, emailVerified: true } } }) } }));
 const fetchMock = vi.fn<typeof fetch>();
 const response = (body: unknown) => new Response(JSON.stringify(body));
 beforeEach(() => { auth.user = 'alice'; fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock); });

@@ -17,7 +17,9 @@ import {
   SlidersHorizontal,
   Upload,
 } from "lucide-react";
+import { PublicHeader } from "@/components/workspace/public-header";
 import { MainLayout } from "@/components/MainLayout";
+import { getCurrentSession } from "@/lib/session";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +39,7 @@ import { PageHeader } from "@/components/workspace/page-header";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { I18nText } from "@/components/i18n-text";
 import { ModelApiGuide } from "@/components/guide/model-api-guide";
+import { WorkspaceAction } from "@/components/workspace/workspace-action";
 
 type TreeKind = "folder" | "image" | "file";
 
@@ -417,29 +420,19 @@ function ModelGuideCard({ guide }: { guide: ModelGuide }) {
 }
 
 export default async function GuidePage({ searchParams }: GuidePageProps) {
+  const session = await getCurrentSession();
   const resolvedSearchParams = await searchParams;
   const defaultTab = guideTabFromSearch(resolvedSearchParams?.tab);
 
-  return (
-    <MainLayout>
-      <div className="space-y-6">
+  const content = (
+      <div className="mx-auto max-w-7xl space-y-6">
         <PageHeader
           title="Training Guide"
           description={<I18nText textKey="guide.header.description" />}
           actions={
             <>
-              <Button asChild variant="outline">
-                <Link href="/dataset">
-                  <Upload className="h-4 w-4" />
-                  Upload dataset
-                </Link>
-              </Button>
-              <Button asChild>
-                <Link href="/tasks">
-                  Open tasks
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
+              <WorkspaceAction href="/dataset" variant="outline"><I18nText textKey="public.startUpload" /></WorkspaceAction>
+              <WorkspaceAction href="/tasks"><I18nText textKey="public.startTrain" /></WorkspaceAction>
             </>
           }
         />
@@ -580,6 +573,12 @@ export default async function GuidePage({ searchParams }: GuidePageProps) {
 
         </Tabs>
       </div>
-    </MainLayout>
   );
+
+  if (session?.user.emailVerified) return <MainLayout>{content}</MainLayout>;
+
+  return <>
+    <PublicHeader />
+    <main className="px-5 py-8 sm:px-8">{content}</main>
+  </>;
 }

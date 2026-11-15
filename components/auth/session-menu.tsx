@@ -2,29 +2,33 @@
 
 import Link from "next/link";
 import { LogIn, LogOut, Undo2, UserRound } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { authClient } from "@/lib/auth-client";
+import { authClient, signOutToHome } from "@/lib/auth-client";
+import { useLanguage } from "@/components/language-provider";
+import { authHref } from "@/lib/auth-redirect";
 
 export function SessionMenu() {
   const router = useRouter();
+  const { t } = useLanguage();
+  const pathname = usePathname();
+  const search = useSearchParams().toString();
   const { data: session, isPending } = authClient.useSession();
 
   if (isPending) {
     return (
-      <Button disabled size="sm" variant="outline">
+      <Button disabled size="icon" variant="outline" aria-label={t("auth.gate.checking")}>
         <UserRound className="h-4 w-4" />
-        Session
       </Button>
     );
   }
 
   if (!session) {
     return (
-      <Button asChild size="sm" variant="outline">
-        <Link href="/login">
+      <Button asChild size="sm" variant="outline" className="min-h-10">
+        <Link href={authHref("login", `${pathname}${search ? `?${search}` : ""}`)}>
           <LogIn className="h-4 w-4" />
-          Sign in
+          {t("public.login")}
         </Link>
       </Button>
     );
@@ -58,12 +62,8 @@ export function SessionMenu() {
         </Button>
       )}
       <Button
-        aria-label="Sign out"
-        onClick={async () => {
-          await authClient.signOut();
-          router.push("/login");
-          router.refresh();
-        }}
+        aria-label={t("public.signout")}
+        onClick={signOutToHome}
         size="icon"
         variant="outline"
       >
