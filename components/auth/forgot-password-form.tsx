@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { OtpInput } from "@/components/ui/otp-input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useLanguage } from "@/components/language-provider";
@@ -108,10 +109,10 @@ async function requestResetEmail(email: string) {
 
   if (!response.ok) {
     const errorBody = (await response.json().catch(() => null)) as {
-      detail?: string;
+      detail?: string; message?: string;
     } | null;
     throw new PasswordResetCheckError(
-      errorBody?.detail || "Could not check this email right now.",
+      errorBody?.detail || errorBody?.message || "Could not send a reset code. Please try again.",
       response.status
     );
   }
@@ -119,7 +120,7 @@ async function requestResetEmail(email: string) {
   await response.json().catch(() => null);
 }
 
-export function ForgotPasswordForm() {
+export function ForgotPasswordForm({ accountEmail }: { accountEmail?: string }) {
   const searchParams = useSearchParams();
   const { t } = useLanguage();
   const queryEmail = useMemo(
@@ -127,7 +128,7 @@ export function ForgotPasswordForm() {
     [searchParams]
   );
   const [step, setStep] = useState<Step>("request");
-  const [email, setEmail] = useState(queryEmail);
+  const [email, setEmail] = useState(accountEmail ?? queryEmail);
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -207,8 +208,8 @@ export function ForgotPasswordForm() {
       setStep("verify");
       setNotice("");
       setVerifyFieldError("otp", isRateLimitError(authError) || authError?.code?.toLowerCase().includes("too_many_attempts")
-        ? "Too many attempts. Please request a new code and try again."
-        : "The code is invalid or expired.");
+        ? "auth.forgot.tooManyAttempts"
+        : "auth.forgot.invalidCode");
       return;
     }
 
@@ -244,7 +245,7 @@ export function ForgotPasswordForm() {
       setVerifyErrors({});
       setPasswordErrors({});
       setStep("verify");
-      setNotice("If an AILAB account exists for this email, a 6-digit reset code was sent.");
+      setNotice(accountEmail ? "auth.password.sent" : "auth.forgot.sent");
     } catch (requestError) {
       if (
         requestError instanceof PasswordResetCheckError &&
@@ -271,13 +272,13 @@ export function ForgotPasswordForm() {
 
     const result = forgotPasswordOtpSchema.safeParse({ email, otp });
     if (!result.success) {
-      setVerifyErrors(zodFieldErrors<VerifyField>(result.error));
+      setVerifyErrors({ otp: otp.trim() ? "auth.forgot.codeLength" : "auth.forgot.codeRequired" });
       return;
     }
 
     setVerifyErrors({});
     setStep("password");
-    setNotice(t("auth.forgot.codeCheckedOnUpdate"));
+    setNotice("auth.forgot.codeCheckedOnUpdate");
   }
 
   async function resetPassword(event: FormEvent<HTMLFormElement>) {
@@ -329,25 +330,25 @@ export function ForgotPasswordForm() {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle>Reset password</CardTitle>
+        <CardTitle>{t(accountEmail ? "auth.password.title" : "auth.forgot.title")}</CardTitle>
         <CardDescription>
-          {t("auth.forgot.formDescription")}
+          {t(accountEmail ? "auth.password.description" : "auth.forgot.formDescription")}
         </CardDescription>
       </CardHeader>
       <CardContent>
         {notice && (
-          <div className="mb-4 rounded-md border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-200">
+          <div role="status" className="mb-4 rounded-md border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-200">
             <div className="flex items-start gap-3">
               <MailCheck className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
-                <p className="font-medium">{notice}</p>
+                <p className="font-medium">{t(notice)}</p>
                 <p className="mt-1 break-all text-xs opacity-80">{email}</p>
               </div>
             </div>
           </div>
         )}
         {error && (
-          <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}
           </p>
         )}
@@ -355,7 +356,7 @@ export function ForgotPasswordForm() {
         {step === "request" && (
           <form className="grid gap-4" noValidate onSubmit={requestResetCode}>
             <div className="grid gap-2">
-              <Label htmlFor="forgot-password-email">Email</Label>
+              <Label htmlFor="forgot-password-email">{t("auth.forgot.email")}</Label>
               <Input
                 aria-describedby={
                   requestErrors.email ? requestErrorIds.email : undefined
@@ -375,12 +376,15 @@ export function ForgotPasswordForm() {
                   }
                 }}
                 onChange={(event) => {
+                  if (accountEmail) return;
                   setEmail(event.target.value);
                   setError("");
                   clearRequestFieldError("email");
                 }}
                 placeholder="you@example.com"
                 required
+                readOnly={Boolean(accountEmail)}
+                disabled={isRequesting}
                 type="email"
                 value={email}
               />
@@ -395,7 +399,7 @@ export function ForgotPasswordForm() {
               ) : (
                 <MailCheck className="h-4 w-4" />
               )}
-              Send code
+              {t("auth.forgot.send")}
             </Button>
           </form>
         )}
@@ -403,7 +407,7 @@ export function ForgotPasswordForm() {
         {step === "verify" && (
           <form className="grid gap-4" noValidate onSubmit={continueWithOtp}>
             <div className="grid gap-2">
-              <Label htmlFor="forgot-password-verify-email">Email</Label>
+              <Label htmlFor="forgot-password-verify-email">{t("auth.forgot.email")}</Label>
               <Input
                 id="forgot-password-verify-email"
                 readOnly
@@ -412,8 +416,9 @@ export function ForgotPasswordForm() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="forgot-password-otp">Verification code</Label>
-              <Input
+              <Label htmlFor="forgot-password-otp">{t("auth.forgot.code")}</Label>
+              <OtpInput
+                disabled={isRequesting}
                 aria-describedby={
                   verifyErrors.otp ? verifyErrorIds.otp : undefined
                 }
@@ -421,29 +426,27 @@ export function ForgotPasswordForm() {
                 autoComplete="one-time-code"
                 id="forgot-password-otp"
                 inputMode="numeric"
-                maxLength={6}
                 onBlur={(event) => {
                   const result = otpCodeSchema.safeParse(event.target.value);
                   if (!result.success) {
                     setVerifyFieldError(
                       "otp",
-                      result.error.issues[0]?.message ?? ""
+                      event.target.value.trim() ? "auth.forgot.codeLength" : "auth.forgot.codeRequired"
                     );
                   } else {
                     clearVerifyFieldError("otp");
                   }
                 }}
-                onChange={(event) => {
-                  setOtp(normalizeOtp(event.target.value));
+                onChange={(value) => {
+                  setOtp(normalizeOtp(value));
                   setError("");
                   clearVerifyFieldError("otp");
                 }}
-                placeholder="000000"
                 value={otp}
               />
-              <FieldError id={verifyErrorIds.otp} message={verifyErrors.otp} />
+              <FieldError id={verifyErrorIds.otp} message={verifyErrors.otp ? t(verifyErrors.otp) : undefined} />
             </div>
-            <Button type="submit">
+            <Button disabled={isRequesting} type="submit">
               <ArrowRight className="h-4 w-4" />
               {t("auth.forgot.continue")}
             </Button>
@@ -460,9 +463,10 @@ export function ForgotPasswordForm() {
                 ) : (
                   <RefreshCw className="h-4 w-4" />
                 )}
-                Resend code
+                {t("auth.forgot.resend")}
               </Button>
-              <Button
+              {!accountEmail && <Button
+                disabled={isRequesting}
                 onClick={() => {
                   setStep("request");
                   setNotice("");
@@ -474,8 +478,8 @@ export function ForgotPasswordForm() {
                 type="button"
                 variant="ghost"
               >
-                Use another email
-              </Button>
+                {t("auth.forgot.anotherEmail")}
+              </Button>}
             </div>
           </form>
         )}
@@ -483,7 +487,7 @@ export function ForgotPasswordForm() {
         {step === "password" && (
           <form className="grid gap-4" noValidate onSubmit={resetPassword}>
             <div className="grid gap-2">
-              <Label htmlFor="forgot-password-password-email">Email</Label>
+              <Label htmlFor="forgot-password-password-email">{t("auth.forgot.email")}</Label>
               <Input
                 id="forgot-password-password-email"
                 readOnly
@@ -492,7 +496,7 @@ export function ForgotPasswordForm() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="forgot-password-new-password">New password</Label>
+              <Label htmlFor="forgot-password-new-password">{t("auth.forgot.newPassword")}</Label>
               <PasswordInput
                 aria-describedby={
                   passwordErrors.newPassword
@@ -524,7 +528,7 @@ export function ForgotPasswordForm() {
                     clearPasswordFieldError("confirmPassword");
                   }
                 }}
-                placeholder="At least 8 characters"
+                placeholder={t("auth.forgot.passwordHint")}
                 value={newPassword}
               />
               <FieldError
@@ -534,7 +538,7 @@ export function ForgotPasswordForm() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="forgot-password-confirm-password">
-                Confirm new password
+                {t("auth.forgot.confirmPassword")}
               </Label>
               <PasswordInput
                 aria-describedby={
@@ -561,7 +565,7 @@ export function ForgotPasswordForm() {
                   setError("");
                   clearPasswordFieldError("confirmPassword");
                 }}
-                placeholder="Repeat the new password"
+                placeholder={t("auth.forgot.confirmHint")}
                 value={confirmPassword}
               />
               <FieldError
@@ -575,7 +579,7 @@ export function ForgotPasswordForm() {
               ) : (
                 <KeyRound className="h-4 w-4" />
               )}
-              Update password
+              {t("auth.forgot.update")}
             </Button>
           </form>
         )}
@@ -585,27 +589,27 @@ export function ForgotPasswordForm() {
             <div className="rounded-md border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-200">
               <div className="flex items-start gap-3">
                 <KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
-                <p className="font-medium">Password updated.</p>
+                <p className="font-medium">{t(accountEmail ? "auth.password.complete" : "auth.forgot.complete")}</p>
               </div>
             </div>
             <Button asChild>
               <Link href={`/login?email=${encodeURIComponent(email)}`}>
                 <ArrowRight className="h-4 w-4" />
-                Sign in
+                {t("auth.forgot.signIn")}
               </Link>
             </Button>
           </div>
         )}
 
-        <p className="mt-5 text-sm text-muted-foreground">
+        {!accountEmail && <p className="mt-5 text-sm text-muted-foreground">
           {t("auth.forgot.rememberPassword")}{" "}
           <Link
             className="font-medium text-foreground underline-offset-4 hover:underline"
             href="/login"
           >
-            Sign in
+            {t("auth.forgot.signIn")}
           </Link>
-        </p>
+        </p>}
       </CardContent>
     </Card>
   );

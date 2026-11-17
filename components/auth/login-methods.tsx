@@ -44,7 +44,7 @@ export function LoginMethods({ microsoftEnabled, microsoftAccountId, hasPassword
       {microsoftLinked && hasPassword && <AlertDialog><AlertDialogTrigger asChild><Button className="min-h-11" variant="outline" disabled={busy || refreshing}><Unlink className="h-4 w-4" />{t("auth.microsoft.unlink")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("auth.microsoft.unlinkTitle")}</AlertDialogTitle><AlertDialogDescription>{t("auth.microsoft.unlinkDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("auth.microsoft.cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void disconnect()}>{t("auth.microsoft.unlink")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
     </div>}
     {microsoftEnabled && !microsoftLinked && <p className="text-sm text-muted-foreground">{t("auth.microsoft.linkDescription")}</p>}
-    {!hasPassword && <p className="text-sm text-muted-foreground">{t("auth.methods.noPassword")} <Link href="/forgot-password" className="underline underline-offset-4">{t("auth.methods.setPassword")}</Link></p>}
+    {!hasPassword && <p className="text-sm text-muted-foreground">{t("auth.methods.noPassword")} <Link href="/account/password" className="underline underline-offset-4">{t("auth.methods.setPassword")}</Link></p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
   </CardContent></Card>;
 }

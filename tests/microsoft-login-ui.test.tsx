@@ -49,7 +49,7 @@ test('unlink requires confirmation and targets the account row ID', async () => 
 test('Microsoft-only members keep their last sign-in method and can set a password', () => {
   render(<LoginMethods microsoftEnabled microsoftAccountId="account" hasPassword={false} />);
   expect(screen.queryByRole('button', { name: 'Unlink' })).toBeNull();
-  expect(screen.getByRole('link', { name: 'Set an AILAB password' }).getAttribute('href')).toBe('/forgot-password');
+  expect(screen.getByRole('link', { name: 'Set an AILAB password' }).getAttribute('href')).toBe('/account/password');
 });
 test('link failure remains visible without changing methods', async () => {
   state.link.mockResolvedValue({ error: { code: 'session_expired' } });

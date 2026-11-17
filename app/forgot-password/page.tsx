@@ -1,15 +1,15 @@
-"use client";
-
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Cpu } from "lucide-react";
 import { Suspense } from "react";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
-import { useLanguage } from "@/components/language-provider";
+import { I18nText } from "@/components/i18n-text";
+import { getCurrentSession } from "@/lib/session";
 
-export default function ForgotPasswordPage() {
-  const { t } = useLanguage();
+export default async function ForgotPasswordPage() {
+  if (await getCurrentSession()) redirect("/account/password");
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -21,7 +21,7 @@ export default function ForgotPasswordPage() {
           <span>
             <span className="block text-sm font-semibold">AILAB</span>
             <span className="block text-xs text-muted-foreground">
-              {t("common.secureWorkspace")}
+              <I18nText textKey="common.secureWorkspace" />
             </span>
           </span>
         </Link>
@@ -33,13 +33,13 @@ export default function ForgotPasswordPage() {
       <section className="mx-auto grid min-h-[calc(100vh-5.5rem)] max-w-6xl items-center gap-10 px-4 pb-10 md:px-8 lg:grid-cols-[1fr_28rem]">
         <div>
           <p className="mb-4 text-xs font-semibold uppercase text-muted-foreground">
-            Account recovery
+            <I18nText textKey="auth.forgot.title" />
           </p>
           <h1 className="max-w-2xl text-4xl font-semibold leading-none sm:text-5xl">
-            Recover access without leaving your training workspace behind.
+            <I18nText textKey="auth.forgot.heading" />
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
-            {t("auth.forgot.description")}
+            <I18nText textKey="auth.forgot.description" />
           </p>
         </div>
         <Suspense fallback={null}>

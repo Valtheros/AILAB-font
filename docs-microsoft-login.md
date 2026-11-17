@@ -88,6 +88,31 @@ used. Actual PSU consent, MFA and Conditional Access must be verified after setu
 
 Deployment and activation: deployment repository `deploy/PSU_LOGIN.md`.
 
+## Password Screens
+
+The 2026-11-17 password-screen update changes presentation and navigation only.
+The Better Auth configuration, password-change/reset endpoints, OTP verification,
+session revocation and Microsoft unlink rules remain unchanged.
+
+- Microsoft-only users open **Set an AILAB password** at `/account/password`.
+  The screen displays their current account email read-only, hides the unrelated
+  switch-email action and explains that an AILAB password does not change the
+  PSU/Microsoft password or automatically unlink Microsoft. This uses the existing
+  mailbox-OTP flow; it is not a new authentication API or a new identity.
+- Signed-in visits to `/forgot-password` navigate to that account screen. Signed-out
+  visitors retain the existing recovery screen with an editable recipient email.
+- Users who already have a local password retain the existing **Change Password**
+  form requiring their current password. The mailbox-recovery flow is separate.
+- The OTP control is one accessible input with six visible slots, numeric input,
+  paste/autofill support and no misleading prefilled-looking zeroes. It does not
+  call the disabled OTP-precheck endpoint; final verification still happens when
+  saving the password. Thai/English labels and notices follow the site language.
+- Successful setup/reset still revokes sessions under the existing policy. The
+  completion screen explains re-sign-in and that unlinking is a separate action.
+
+Tests: `password-reset-flow`, `password-pages` and `microsoft-login-ui`; the existing
+real-handler `microsoft-oauth-integration` also covers password setup before unlink.
+
 ## Unicode Profiles
 
 Microsoft display names can contain Thai or other Unicode characters. Do not put
