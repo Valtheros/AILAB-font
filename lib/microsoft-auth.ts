@@ -1,5 +1,19 @@
 import { microsoft, type MicrosoftOptions } from "better-auth/social-providers";
 import { validateToken } from "better-auth/oauth2";
+import { z } from "zod";
+
+export function isTrustedPsuProfile(profile: Record<string, unknown>, tenantId: string): boolean {
+  const email = z.email().safeParse(profile.email);
+  if (!email.success) return false;
+  const domain = email.data.split("@")[1].toLowerCase();
+  const issuer = `https://login.microsoftonline.com/${tenantId}/v2.0`;
+  // Microsoft defines a missing idp as the token issuer, not an external IdP.
+  const idp = profile.idp === undefined ? profile.iss : profile.idp;
+  return profile.tid === tenantId && profile.iss === issuer
+    && (profile.acct === undefined || profile.acct === 0 || profile.acct === "0")
+    && (idp === issuer || idp === `https://sts.windows.net/${tenantId}/`)
+    && (domain === "psu.ac.th" || domain.endsWith(".psu.ac.th"));
+}
 
 export function getMicrosoftAuthConfig(env: Record<string, string | undefined> = process.env): MicrosoftOptions | undefined {
   if (env.MICROSOFT_AUTH_ENABLED !== "true") return undefined;
@@ -17,8 +31,8 @@ export function getMicrosoftAuthConfig(env: Record<string, string | undefined> =
     disableDefaultScope: true,
     scope: ["openid", "profile", "email"],
     disableProfilePhoto: true,
-    // Entra email claims do not prove mailbox ownership; AILAB verifies it once.
-    mapProfileToUser: () => ({ emailVerified: false, image: undefined }),
+    // Trust PSU's managed identity, not arbitrary Microsoft email claims.
+    mapProfileToUser: profile => ({ emailVerified: isTrustedPsuProfile(profile, tenantId), image: undefined }),
   };
   const provider = microsoft(options);
   return { ...options, async getUserInfo(tokens) {

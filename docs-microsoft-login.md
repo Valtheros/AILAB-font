@@ -38,10 +38,19 @@ is requested; Graph profile photos and offline refresh access are not requested.
   utility to verify the Microsoft JWKS signature, issuer, audience, expiry and
   required identity claims. The provider binds accounts by Entra `oid`.
   Admission also enforces the configured `tid` on create, link and returning login.
-- Entra's email claim is not mailbox verification. Newly provisioned Microsoft
-  users remain `emailVerified=false` until they follow AILAB's verification email
-  or complete its mailbox OTP password setup. Existing API/Label Studio/storage
-  gates keep requiring verification. No blanket verified/admin assignment exists.
+- AILAB trusts PSU as its managed identity authority: a validated token from the
+  configured PSU tenant, a PSU home identity provider, a valid `psu.ac.th` or
+  `*.psu.ac.th` email, and no guest account claim give `emailVerified=true`.
+  This is an explicit organization SSO trust policy, not a claim that every
+  Microsoft email is mailbox-verified. Token validation runs before this policy.
+  Microsoft's missing `idp` means use `iss`; explicit external IdPs and guest
+  claims are not auto-verified. Guests/external addresses retain mailbox
+  verification. Do not use a different organization's tenant for this PSU policy.
+- New trusted PSU users receive no verification email and immediately pass the
+  existing API/Label Studio/storage verification gates. Returning linked PSU
+  users with a matching email are upgraded without changing their local ID or
+  role. Password registration still requires mailbox verification, including PSU
+  addresses; an unlinked password account is never claimed by matching email.
 - Existing members sign in with their original method, open Account and link a
   Microsoft identity with the same email. The server requires a verified local
   session to begin linking. AILAB also checks that the same verified, non-banned
@@ -49,8 +58,8 @@ is requested; Graph profile photos and offline refresh access are not requested.
   Linking preserves the local user ID, role, email verification and owned resources.
 - While Microsoft is enabled, all OAuth providers use explicit linking instead
   of email-based implicit merging. Microsoft is trusted only within that policy
-  so a verified, authenticated member can explicitly link its unverified Entra
-  email claim; different emails still cannot link. No `trustedProviders` shortcut
+  so a verified, authenticated member can explicitly link its Entra
+  identity; different emails still cannot link. No `trustedProviders` shortcut
   may be added without keeping `disableImplicitLinking=true`.
 - The Account page fetches only its session user's account IDs, provider IDs and
   password-presence booleans. Tokens, password hashes and secrets are not serialized.
@@ -69,7 +78,8 @@ is requested; Graph profile photos and offline refresh access are not requested.
 
 Tests cover configuration, UI and the real Better Auth handler against an isolated
 memory adapter with RSA-signed fixture ID tokens and intercepted Microsoft endpoints.
-They verify provisioning/mailbox confirmation, stable identity, explicit linking,
+They verify PSU provisioning without email, returning-account upgrades, guest and
+password mailbox confirmation, stable identity, explicit linking,
 ownership, bad tokens/state, cancellation, bans, OTP password setup and unlinking.
 The integration fixture disables rate limiting so it can test many auth attempts
 in one second, but explicitly enables origin/CSRF checks that Better Auth normally

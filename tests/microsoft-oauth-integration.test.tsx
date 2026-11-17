@@ -22,7 +22,7 @@ const base = 'http://localhost:3000';
 const tenant = '22222222-2222-2222-2222-222222222222';
 const client = '11111111-1111-1111-1111-111111111111';
 const identity = { oid: '33333333-3333-3333-3333-333333333333', sub: 'pairwise-subject', tid: tenant,
-  email: 'member@psu.ac.th', name: 'PSU member', email_verified: true };
+  email: 'member@psu.ac.th', name: 'PSU member', email_verified: false };
 async function createTestAuth() {
   const configured = (await import('@/lib/auth')).auth;
   return betterAuth({ ...configured.options, rateLimit: { enabled: false },
@@ -109,17 +109,42 @@ beforeAll(async () => {
 beforeEach(() => { for (const rows of Object.values(state.db)) rows.length = 0; state.emails.length = 0; state.otps.length = 0; codes.clear(); exchanges = 0; });
 afterAll(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
-test('new Microsoft identity gets an AILAB account, mailbox verification and a stable oid binding', async () => {
+test('new PSU identity is immediately verified without sending email and keeps a stable oid binding', async () => {
   const { response, cookie } = await finish(await start());
   expect(response.headers.get('location')).toBe('/dataset?search=road');
   expect(state.db.user).toHaveLength(1); expect(state.db.account).toHaveLength(1);
-  expect(state.db.user[0]).toMatchObject({ email: identity.email, emailVerified: false, role: 'user' });
+  expect(state.db.user[0]).toMatchObject({ email: identity.email, emailVerified: true, role: 'user' });
   expect(state.db.account[0]).toMatchObject({ providerId: 'microsoft', accountId: identity.oid, userId: state.db.user[0].id });
-  expect(state.emails).toHaveLength(1);
-  const verification = await request(state.emails[0].url, undefined, cookie);
-  expect(verification.status).toBe(302); expect(state.db.user[0].emailVerified).toBe(true);
-  const session = await request('/api/auth/get-session', undefined, [cookie, cookies(verification)].join('; '));
-  expect((await session.json()).user.id).toBe(state.db.user[0].id);
+  expect(state.emails).toHaveLength(0);
+  const session = await request('/api/auth/get-session', undefined, cookie);
+  expect((await session.json()).user).toMatchObject({ id: state.db.user[0].id, emailVerified: true });
+});
+test('an existing PSU-linked unverified account upgrades on login without an email or a new identity', async () => {
+  await finish(await start()); const id = state.db.user[0].id;
+  state.db.user[0].emailVerified = false;
+  const result = await finish(await start());
+  expect(result.response.headers.get('location')).toBe('/dataset?search=road');
+  expect(state.db.user).toHaveLength(1); expect(state.db.user[0]).toMatchObject({ id, emailVerified: true });
+  expect(state.emails).toHaveLength(0);
+  const session = await request('/api/auth/get-session', undefined, result.cookie);
+  expect((await session.json()).user.emailVerified).toBe(true);
+});
+test('password signup still requires mailbox confirmation even for a PSU email', async () => {
+  const response = await request('/api/auth/sign-up/email', { email: identity.email, name: 'Password member', password: 'fixture-password-123' });
+  expect(response.status).toBe(200); expect(state.db.user[0].emailVerified).toBe(false); expect(state.emails).toHaveLength(1);
+  const microsoft = await finish(await start());
+  expect(microsoft.response.headers.get('location')).toContain('error=account_not_linked');
+  expect(state.db.user[0].emailVerified).toBe(false); expect(state.db.account.map(row => row.providerId)).toEqual(['credential']);
+});
+test.each([{ idp: 'live.com', acct: 1 }, { email: 'guest@external.example' }])('a guest or external email is not auto-verified even with an email_verified claim: %j', async extra => {
+  await finish(await start(), { ...identity, ...extra, email_verified: true });
+  expect(state.db.user[0].emailVerified).toBe(false); expect(state.emails).toHaveLength(1);
+});
+test('a changed Microsoft email cannot verify or rebind the old account email', async () => {
+  await finish(await start()); const id = state.db.user[0].id; state.db.user[0].emailVerified = false;
+  await finish(await start(), { ...identity, email: 'other@psu.ac.th' });
+  expect(state.db.user[0]).toMatchObject({ id, email: identity.email, emailVerified: false });
+  expect(state.emails).toHaveLength(0);
 });
 test('same-email sign-in cannot silently take over an existing account; explicit linking preserves its ID and role', async () => {
   const existing = await member();
@@ -168,7 +193,7 @@ test('declining Microsoft consent returns to the error page without creating an 
   expect(exchanges).toBe(0); expect(state.db.user).toHaveLength(0);
 });
 test('unverified Microsoft sessions cannot start linking another account', async () => {
-  const result = await finish(await start());
+  const result = await finish(await start(), { ...identity, idp: 'live.com', acct: 1 });
   const denied = await request('/api/auth/link-social', { provider: 'microsoft', callbackURL: '/account' }, result.cookie);
   expect(denied.status).toBe(403); expect((await denied.json()).code).toBe('EMAIL_NOT_VERIFIED');
 });
