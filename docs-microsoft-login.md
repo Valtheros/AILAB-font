@@ -99,8 +99,10 @@ session revocation and Microsoft unlink rules remain unchanged.
   switch-email action and explains that an AILAB password does not change the
   PSU/Microsoft password or automatically unlink Microsoft. This uses the existing
   mailbox-OTP flow; it is not a new authentication API or a new identity.
-- Signed-in visits to `/forgot-password` navigate to that account screen. Signed-out
-  visitors retain the existing recovery screen with an editable recipient email.
+- Signed-in visits to `/forgot-password` navigate to that setup screen only if
+  there is no local password yet. Accounts with a password return to `/account`
+  and its existing current-password form. Signed-out visitors retain the existing
+  recovery screen with an editable recipient email.
 - Users who already have a local password retain the existing **Change Password**
   form requiring their current password. The mailbox-recovery flow is separate.
 - The OTP control is one accessible input with six visible slots, numeric input,

@@ -3,15 +3,16 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import AccountPasswordPage from '@/app/account/password/page';
 import ForgotPasswordPage from '@/app/forgot-password/page';
 
-const state = vi.hoisted(() => ({ session: vi.fn(), form: vi.fn() }));
+const state = vi.hoisted(() => ({ session: vi.fn(), form: vi.fn(), methods: vi.fn() }));
 vi.mock('@/lib/session', () => ({ getCurrentSession: state.session }));
+vi.mock('@/lib/auth-database', () => ({ getUserLoginMethods: state.methods }));
 vi.mock('next/navigation', () => ({ redirect: (path: string) => { throw new Error('Redirect:' + path); } }));
 vi.mock('@/components/MainLayout', () => ({ MainLayout: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock('@/components/auth/forgot-password-form', () => ({ ForgotPasswordForm: (props: unknown) => { state.form(props); return <div>Recovery form</div>; } }));
 vi.mock('@/components/i18n-text', () => ({ I18nText: ({ textKey }: { textKey: string }) => textKey }));
 vi.mock('@/components/language-toggle', () => ({ LanguageToggle: () => null }));
 vi.mock('@/components/theme-toggle', () => ({ ThemeToggle: () => null }));
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); state.methods.mockResolvedValue({ hasPassword: false }); });
 afterEach(cleanup);
 
 test('anonymous recovery stays available without a signed-in account', async () => {
@@ -34,4 +35,10 @@ test('private setup passes only the current server identity to the form', async 
   render(await AccountPasswordPage());
   expect(state.form.mock.calls[0][0]).toMatchObject({ accountEmail: 'mine@psu.ac.th' });
   expect(screen.getByRole('link').getAttribute('href')).toBe('/account');
+});
+test.each([AccountPasswordPage, ForgotPasswordPage])('members with an existing password return to the old-password form', async page => {
+  state.session.mockResolvedValueOnce({ user: { id: 'mine', email: 'mine@psu.ac.th' } });
+  state.methods.mockResolvedValueOnce({ hasPassword: true });
+  await expect(page()).rejects.toThrow('Redirect:/account');
+  expect(state.methods).toHaveBeenCalledWith('mine'); expect(state.form).not.toHaveBeenCalled();
 });

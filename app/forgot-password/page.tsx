@@ -7,9 +7,14 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { I18nText } from "@/components/i18n-text";
 import { getCurrentSession } from "@/lib/session";
+import { getUserLoginMethods } from "@/lib/auth-database";
 
 export default async function ForgotPasswordPage() {
-  if (await getCurrentSession()) redirect("/account/password");
+  const session = await getCurrentSession();
+  if (session) {
+    const { hasPassword } = await getUserLoginMethods(session.user.id);
+    redirect(hasPassword ? "/account" : "/account/password");
+  }
 
   return (
     <main className="min-h-screen bg-background text-foreground">

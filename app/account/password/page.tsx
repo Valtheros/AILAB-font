@@ -6,10 +6,12 @@ import { MainLayout } from "@/components/MainLayout";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 import { I18nText } from "@/components/i18n-text";
 import { getCurrentSession } from "@/lib/session";
+import { getUserLoginMethods } from "@/lib/auth-database";
 
 export default async function AccountPasswordPage() {
   const session = await getCurrentSession();
   if (!session) redirect("/login?callbackURL=%2Faccount%2Fpassword");
+  if ((await getUserLoginMethods(session.user.id)).hasPassword) redirect("/account");
   return (
     <MainLayout>
       <div className="mx-auto max-w-md space-y-5">
