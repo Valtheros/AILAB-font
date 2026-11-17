@@ -96,3 +96,21 @@ ByteString. The backend proxy forwards only the authenticated user ID/email and
 the internal token. The unused `x-user-name` header was removed; backend ownership
 continues to be resolved from the database. `tests/backend-proxy.test.tsx` covers
 Thai/emoji names, spoofed identity headers and missing/unverified sessions.
+
+## Account Deletion
+
+Microsoft-only users follow the same Admin removal lifecycle as password users.
+Opening Account can allocate a `storage_accounts` row even when the user has no
+datasets, training runs or Label Studio account. Its restrictive foreign key is
+intentional: never delete that row or bypass the storage operator to make user
+deletion succeed. Both Admin Remove and Delete account and data disable the
+account, revoke sessions, call the existing backend cleanup (including storage
+retirement), and only then delete the auth user. Auth accounts/sessions cascade.
+The simple Remove action still rejects linked workspace data before any cleanup;
+that data requires the explicit resource-impact dialog. Backend cleanup failures
+retain the disabled user and credentials for retry. A successful HTTP status alone
+is insufficient: cleanup must return JSON with `status: "success"` before the
+auth account is removed. Connection/invalid-response errors and backend reasons
+are visible inside the confirmation dialog, not hidden behind it. Removing the AILAB user does
+not delete or disable the organization's Microsoft/PSU identity. Tests cover
+storage-only accounts, cleanup failure/retry, self-deletion and admin-only access.

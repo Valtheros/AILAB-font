@@ -133,7 +133,7 @@ function userDeleteImpactTotal(user: AdminUserRow) {
 function userDeleteDescription(user: AdminUserRow) {
   const total = userDeleteImpactTotal(user);
   if (total === 0) {
-    return `This permanently deletes ${user.email} from auth users, accounts, and sessions. No linked workspace data was found for this user.`;
+    return `This permanently deletes ${user.email} from auth users, accounts, and sessions. No linked workspace data was found. Automatically allocated storage and temporary files will also be cleaned up.`;
   }
 
   return [
@@ -343,7 +343,7 @@ export function AdminUsersClient({
   const actionHandlers: UserActionHandlers = {
     isPending,
     openBanDialog: (user) => setBanDialog({ user, reason: "Banned by admin" }),
-    openConfirm: setConfirmAction,
+    openConfirm: (action) => { setMessage(""); setConfirmAction(action); },
     openPasswordDialog: (user) => setPasswordDialog({ user, password: "" }),
     openCleanupDialog: (user) => {
       setMessage("");
@@ -547,6 +547,7 @@ export function AdminUsersClient({
             <AlertDialogTitle>{confirmAction?.title}</AlertDialogTitle>
             <AlertDialogDescription className="whitespace-pre-line">{confirmAction?.description}</AlertDialogDescription>
           </AlertDialogHeader>
+          {message && <p role="alert" className="text-sm text-destructive">{message}</p>}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction

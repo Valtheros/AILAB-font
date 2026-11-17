@@ -34,9 +34,15 @@ async function backendAdminRequest(path: string, init?: RequestInit) {
   requestHeaders.set("x-user-email", session.user.email);
   requestHeaders.set("x-internal-token", process.env.BACKEND_INTERNAL_TOKEN ?? "");
   if (init?.body) requestHeaders.set("content-type", "application/json");
-  const response = await fetch(`${base.replace(/\/$/, "")}${path}`, { ...init, headers: requestHeaders, cache: "no-store" });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || `Backend request failed with status ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetch(`${base.replace(/\/$/, "")}${path}`, { ...init, headers: requestHeaders, cache: "no-store" });
+  } catch {
+    throw new Error("Cannot reach the data management service. Please try again later.");
+  }
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(typeof data?.detail === "string" ? data.detail : `Data management service returned HTTP ${response.status}. Please retry.`);
+  if (!data || typeof data !== "object") throw new Error("The data management service returned an invalid response. Please retry.");
   return data;
 }
 
@@ -211,9 +217,7 @@ export async function removeUserAction(userId: string): Promise<AdminActionResul
     const impact = await getUserDeleteImpact(userId);
     if (impact.total > 0) throw new Error("This user still owns resources. Disable, transfer, or delete their data first.");
 
-    await authDatabasePool.query('delete from "user" where id = $1', [userId]);
-    revalidateAdminUsers();
-    return ok("User removed.");
+    return await deleteUserAndDataAction(userId);
   } catch (error) {
     return fail(error);
   }
@@ -257,7 +261,8 @@ export async function deleteUserAndDataAction(userId: string): Promise<AdminActi
       [userId, "Account disabled during resource cleanup"],
     );
     await authDatabasePool.query('delete from session where "userId" = $1', [userId]);
-    await backendAdminRequest(`/api/admin/users/${encodeURIComponent(userId)}/resources`, { method: "DELETE" });
+    const cleanup = await backendAdminRequest(`/api/admin/users/${encodeURIComponent(userId)}/resources`, { method: "DELETE" });
+    if (cleanup.status !== "success") throw new Error("Account cleanup was not confirmed. The account was kept; please retry.");
     await authDatabasePool.query('delete from "user" where id = $1', [userId]);
     revalidateAdminUsers();
     return ok("User and owned data removed.");

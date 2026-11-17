@@ -16,6 +16,30 @@ vi.mock('@/app/admin/users/actions', () => ({
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
+test('an otherwise empty account confirms storage cleanup and keeps failed removal visible for retry', async () => {
+  const user: AdminUserRow = {
+    id: 'owner', name: 'PSU member', email: 'member@psu.ac.th', emailVerified: true,
+    role: 'user', banned: false, banReason: null, banExpires: null,
+    createdAt: '2026-01-01', updatedAt: '2026-01-01', sessionCount: 1,
+    workspaceMembershipCount: 0, projectCount: 0, datasetCount: 0,
+    trainingRunCount: 0, labelStudioAccountCount: 0, legacyAnnotationCount: 0,
+  };
+  actions.remove.mockResolvedValueOnce({ ok: false, message: 'Storage accounting is not available.' })
+    .mockResolvedValue({ ok: true, message: 'User and owned data removed.' });
+  render(<AdminUsersClient currentUserId="admin" users={[user]} initialSearch="" limit={20} offset={0} total={1} />);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+  const dialog = await screen.findByRole('alertdialog');
+  expect(within(dialog).getByText(/Automatically allocated storage and temporary files/)).toBeTruthy();
+  expect(actions.remove).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Remove user' }));
+  await waitFor(() => expect(actions.remove).toHaveBeenCalledExactlyOnceWith('owner'));
+  expect((await within(dialog).findByRole('alert')).textContent).toContain('Storage accounting is not available.');
+  await waitFor(() => expect((within(dialog).getByRole('button', { name: 'Remove user' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Remove user' }));
+  await waitFor(() => expect(actions.remove).toHaveBeenCalledTimes(2));
+  expect(actions.cleanup).not.toHaveBeenCalled();
+});
+
 test('a Label Studio account requires explicit cleanup and errors appear in the dialog', async () => {
   const user: AdminUserRow = {
     id: 'owner', name: 'Owner', email: 'owner@example.test', emailVerified: true,
