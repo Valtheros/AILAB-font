@@ -6,7 +6,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { I18nText } from "@/components/i18n-text";
 
-export function AuthPage({ mode }: { mode: "login" | "signup" }) {
+export function AuthPage({ mode, microsoftEnabled = false }: { mode: "login" | "signup"; microsoftEnabled?: boolean }) {
   return <main className="min-h-screen bg-background text-foreground">
     <header className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-5 md:px-8">
       <Link className="flex items-center gap-3 font-semibold" href="/overview">
@@ -19,7 +19,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
         <ArrowLeft className="size-4" /><I18nText textKey="public.backOverview" />
       </Link>
       <h1 className="text-2xl font-semibold"><I18nText textKey={`public.${mode}Title`} /></h1>
-      <Suspense fallback={null}><AuthForm mode={mode} /></Suspense>
+      <Suspense fallback={null}><AuthForm mode={mode} microsoftEnabled={microsoftEnabled} /></Suspense>
     </section>
   </main>;
 }

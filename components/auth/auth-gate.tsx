@@ -59,7 +59,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      setResendMessage("Verification link sent. Check your inbox.");
+      setResendMessage("auth.verification.resent");
     } catch (authError) {
       setResendError(
         authError instanceof Error
@@ -90,7 +90,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-md bg-foreground text-background">
               <MailCheck className="h-4 w-4" />
             </div>
-            <CardTitle>Verify your email</CardTitle>
+            <CardTitle>{t("auth.verification.title")}</CardTitle>
             <CardDescription>
               {t("auth.gate.verifyDescription")}
             </CardDescription>
@@ -101,7 +101,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             </p>
             {resendMessage && (
               <p className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
-                {resendMessage}
+                {t(resendMessage)}
               </p>
             )}
             {resendError && (
@@ -120,7 +120,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 ) : (
                   <RefreshCw className="h-4 w-4" />
                 )}
-                Resend link
+                {t("auth.verification.resend")}
               </Button>
               <Button
                 onClick={signOutToHome}
@@ -128,7 +128,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 variant="outline"
               >
                 <LogOut className="h-4 w-4" />
-                Sign out
+                {t("auth.verification.signOut")}
               </Button>
             </div>
           </CardContent>

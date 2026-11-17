@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
-import { ArrowRight, Loader2, MailCheck, RefreshCw } from "lucide-react";
+import { ArrowRight, Building2, Loader2, MailCheck, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -63,7 +63,7 @@ function isEmailNotVerifiedError(error: AuthClientError | null | undefined) {
   );
 }
 
-export function AuthForm({ mode }: { mode: AuthMode }) {
+export function AuthForm({ mode, microsoftEnabled = false }: { mode: AuthMode; microsoftEnabled?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useLanguage();
@@ -80,6 +80,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
   const [verificationMessage, setVerificationMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
+  const [isMicrosoftSubmitting, setIsMicrosoftSubmitting] = useState(false);
   const [isResendingVerification, setIsResendingVerification] = useState(false);
   const [showResendConfirm, setShowResendConfirm] = useState(false);
   const isSignup = mode === "signup";
@@ -193,6 +194,19 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
     }
   }
 
+  async function signInWithMicrosoft() {
+    setError(""); setFieldErrors({}); setIsMicrosoftSubmitting(true);
+    try {
+      const result = await authClient.signIn.social({
+        provider: "microsoft", callbackURL,
+        errorCallbackURL: `/auth-error?callbackURL=${encodeURIComponent(callbackURL)}`,
+      });
+      if (result.error) setError(t("auth.microsoft.failed"));
+    } catch {
+      setError(t("auth.microsoft.failed"));
+    } finally { setIsMicrosoftSubmitting(false); }
+  }
+
   async function resendVerificationEmail(
     targetEmail = verificationEmail || email
   ) {
@@ -300,10 +314,19 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {microsoftEnabled && <div className="mb-4 space-y-2">
+          <Button className="min-h-11 w-full" variant="outline" type="button"
+            disabled={isMicrosoftSubmitting || isGoogleSubmitting || isSubmitting}
+            onClick={() => void signInWithMicrosoft()}>
+            {isMicrosoftSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
+            {t("auth.microsoft.continue")}
+          </Button>
+          <p className="text-xs leading-5 text-muted-foreground">{t("auth.microsoft.verification")}</p>
+        </div>}
         {googleEnabled && (
           <Button
             className="mb-4 w-full"
-            disabled={isGoogleSubmitting || isSubmitting}
+            disabled={isGoogleSubmitting || isMicrosoftSubmitting || isSubmitting}
             onClick={signInWithGoogle}
             type="button"
             variant="outline"
@@ -486,7 +509,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
                 </Link>
               </div>
             )}
-            <Button disabled={isSubmitting} type="submit">
+            <Button disabled={isSubmitting || isMicrosoftSubmitting || isGoogleSubmitting} type="submit">
               {isSubmitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

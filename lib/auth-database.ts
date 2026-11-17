@@ -26,3 +26,13 @@ export async function authUserExistsByEmail(email: string) {
 
   return (result.rowCount ?? 0) > 0;
 }
+
+export async function getUserLoginMethods(userId: string) {
+  const { rows } = await authDatabasePool.query<{ id: string; providerId: string; hasPassword: boolean }>(
+    'select id, "providerId", password is not null as "hasPassword" from account where "userId" = $1', [userId],
+  );
+  return {
+    microsoftAccountId: rows.find(row => row.providerId === "microsoft")?.id ?? null,
+    hasPassword: rows.some(row => row.providerId === "credential" && row.hasPassword),
+  };
+}

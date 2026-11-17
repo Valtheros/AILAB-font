@@ -5,6 +5,7 @@ import SignupPage from '@/app/signup/page';
 
 const state = vi.hoisted(() => ({ session: null as object | null, redirect: vi.fn() }));
 vi.mock('@/lib/session', () => ({ getCurrentSession: async () => state.session }));
+vi.mock('@/lib/auth', () => ({ microsoftAuthEnabled: true }));
 vi.mock('next/navigation', () => ({ redirect: state.redirect }));
 vi.mock('@/app/overview/page', () => ({ default: () => null }));
 vi.mock('@/components/auth/auth-page', () => ({ AuthPage: () => null }));
@@ -19,7 +20,8 @@ test('root redirects authenticated visitors to their dashboard', async () => {
   await expect(HomePage()).rejects.toThrow('redirect:/dashboard');
 });
 test.each([LoginPage, SignupPage])('auth page does not infer a valid session from cookies', async (Page) => {
-  expect(await Page({ searchParams: Promise.resolve({ callbackURL: '/dataset' }) })).toBeTruthy();
+  const page = await Page({ searchParams: Promise.resolve({ callbackURL: '/dataset' }) });
+  expect(page.props.microsoftEnabled).toBe(true);
   expect(state.redirect).not.toHaveBeenCalled();
 });
 test.each([LoginPage, SignupPage])('auth page respects a validated session and safe destination', async (Page) => {

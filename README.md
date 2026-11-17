@@ -126,6 +126,12 @@ errors under each input.
 Google login is optional. Leave `NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=false` until a
 Google OAuth client ID and secret are configured.
 
+PSU Microsoft Entra ID login is optional and disabled by default. It uses the
+existing Better Auth provider, not a separate MSAL service. See
+[Microsoft login configuration and account linking](docs-microsoft-login.md)
+before enabling the server-only credentials. Linking keeps existing user IDs
+and resources; never enable implicit email-based merging for this integration.
+
 Behind a reverse proxy, set `TRUSTED_PROXY_IPS` to the verified proxy IPs or
 CIDRs in the forwarded chain, separated by spaces or commas. Use the same
 trusted proxy boundary as Caddy; never include untrusted client networks.

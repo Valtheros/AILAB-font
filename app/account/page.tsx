@@ -13,12 +13,16 @@ import { StatusBadge } from "@/components/workspace/status-badge";
 import { I18nText } from "@/components/i18n-text";
 import { getCurrentSession } from "@/lib/session";
 import { StorageUsage } from "@/components/storage-usage";
+import { LoginMethods } from "@/components/auth/login-methods";
+import { microsoftAuthEnabled } from "@/lib/auth";
+import { getUserLoginMethods } from "@/lib/auth-database";
 
 export default async function AccountPage() {
   const session = await getCurrentSession();
   if (!session) {
     redirect("/login?callbackURL=/account");
   }
+  const loginMethods = await getUserLoginMethods(session.user.id);
 
   return (
     <MainLayout>
@@ -52,7 +56,8 @@ export default async function AccountPage() {
           </CardContent>
         </Card>
         <StorageUsage />
-        <ChangePasswordForm />
+        <LoginMethods microsoftEnabled={microsoftAuthEnabled} {...loginMethods} />
+        {loginMethods.hasPassword && <ChangePasswordForm />}
       </div>
     </MainLayout>
   );
