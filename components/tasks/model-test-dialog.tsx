@@ -52,7 +52,7 @@ interface Segmentation {
   counts?: Record<string, number>;
 }
 
-interface PredictResponse {
+export interface PredictResponse {
   taskType?: string;
   predictions?: Prediction[];
   top?: Prediction | null;

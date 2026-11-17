@@ -13,6 +13,7 @@ import {
   HardDrive,
   X,
   BookOpenCheck,
+  Rocket,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ const navItems = [
     href: "/account",
     icon: UserRound,
   },
+  { title: "Model Apps", href: "/apps", icon: Rocket },
 ];
 
 const adminNavItem = {

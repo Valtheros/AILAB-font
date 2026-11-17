@@ -15,6 +15,7 @@ export function executionReadiness(selection: ExecutionSelection, availability: 
 export type ComputeJob = { id: string; kind: string; status: string; queueReason?: string; errorCode?: string; error?: string; inputName?: string; inputBytes?: number; assignedGpu?: { uuid: string; name?: string }; requestedExecution: ExecutionSelection; progress?: { current: number; total: number }; expiresAt?: string | null };
 
 const messages: Record<string, [string, string]> = {
+  MODEL_APP_IN_USE: ["Delete the Model App that references this run before deleting the model.", "กรุณาลบ Model App ที่อ้างอิง run นี้ก่อนลบโมเดล"],
   STORAGE_QUOTA_EXCEEDED: ["Storage is full or insufficient for this job. Remove unused files or ask an administrator to increase your quota.", "พื้นที่ไม่พอสำหรับงานนี้ กรุณาลบไฟล์ที่ไม่ใช้หรือติดต่อผู้ดูแลเพื่อเพิ่มโควตา"],
   STORAGE_DISK_FULL: ["The server needs free disk space before accepting more work. Contact an administrator.", "พื้นที่ว่างของเซิร์ฟเวอร์ไม่พอรับงานเพิ่ม กรุณาติดต่อผู้ดูแล"],
   STORAGE_UNAVAILABLE: ["Storage accounting is temporarily unavailable. Your saved data has not been removed. Please retry.", "ระบบตรวจพื้นที่ยังไม่พร้อม ข้อมูลที่บันทึกไว้ไม่ได้ถูกลบ กรุณาลองใหม่"],

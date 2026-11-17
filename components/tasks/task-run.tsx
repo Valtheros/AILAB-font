@@ -9,7 +9,6 @@ import { Progress } from "@/components/ui/progress";
 import { MetricsCharts, formatMetricValue, type MetricRow } from "@/components/workspace/metrics-charts";
 import { ModelTestDialog } from "@/components/tasks/model-test-dialog";
 import { EvaluationPanel } from "@/components/tasks/evaluation-panel";
-import { ModelApiPanel } from "@/components/tasks/model-api-panel";
 import { StatusBadge, type StatusTone } from "@/components/workspace/status-badge";
 import { apiBaseUrl, artifactDownloadUrl } from "@/lib/api";
 import type { TrainingTask } from "@/lib/trainingConfig";
@@ -257,7 +256,6 @@ export function TaskRun({ task, onRefresh }: { task: TrainingTask; onRefresh: ()
     </div>
     {testEvalCard}
     {status === "completed" && task.runSlug && <EvaluationPanel key={`evaluation:${task.runSlug}:${evaluationJob ?? ''}`} runSlug={task.runSlug} modelType={task.modelType} taskType={task.taskType} initialJobId={evaluationJob} />}
-    {status === "completed" && task.runSlug && <ModelApiPanel key={`model-api:${task.runSlug}`} runSlug={task.runSlug} />}
     {metrics.length > 0 && <MetricsCharts metrics={metrics} />}
     {yoloPlots.length > 0 && (
       <Card>

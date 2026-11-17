@@ -14,7 +14,7 @@ test.each([
   expect(safeCallbackURL(value)).toBe('/dashboard');
 });
 
-test.each(['/', '/overview', '/dataset?search=hello%20world', '/tasks/task-1#results',
+test.each(['/', '/overview', '/apps/user-id/model-name?job=abc', '/dataset?search=hello%20world', '/tasks/task-1#results',
   '/annotate?project=3&transfer=12345678-1234-1234-1234-123456789012'])('preserves local callback %s', (path) => {
   expect(safeCallbackURL(path)).toBe(path);
   expect(new URL(authHref('signup', path), 'https://ailab.test').searchParams.get('callbackURL')).toBe(path);
@@ -24,7 +24,7 @@ test.each(['/', '/overview', '/guide?tab=models', '/login', '/signup'])('public 
   expect(proxy(new NextRequest(`https://ailab.test${path}`)).status).toBe(200);
 });
 
-test.each(['/dashboard', '/dataset', '/tasks', '/annotate', '/annotate?project=3&transfer=abc', '/dataset/123', '/tasks/123?tab=results', '/account', '/admin/users', '/admin/compute', '/config', '/training', '/results', '/annotate/private'])('protects exact private paths: %s', (path) => {
+test.each(['/apps', '/apps/user/model?version=1', '/dashboard', '/dataset', '/tasks', '/annotate', '/annotate?project=3&transfer=abc', '/dataset/123', '/tasks/123?tab=results', '/account', '/admin/users', '/admin/compute', '/config', '/training', '/results', '/annotate/private'])('protects exact private paths: %s', (path) => {
   const response = proxy(new NextRequest(`https://ailab.test${path}`));
   const location = new URL(response.headers.get('location')!);
   expect(location.pathname).toBe('/login');

@@ -8,7 +8,7 @@ import { requireAdminForAction } from "@/lib/admin-auth";
 
 export type AdminActionResult = { ok: true; message: string } | { ok: false; message: string };
 export type ResourceImpactResult =
-  | { ok: true; workspaceMemberships: number; projects: number; datasets: number; runs: number; activeJobs: Array<{ run_slug: string; status: string }>; totalBytes: number }
+  | { ok: true; workspaceMemberships: number; projects: number; datasets: number; runs: number; modelApps: number; activeJobs: Array<{ run_slug: string; status: string }>; totalBytes: number }
   | { ok: false; message: string };
 
 function ok(message: string): AdminActionResult {
@@ -63,6 +63,7 @@ async function getUserDeleteImpact(userId: string) {
     labelStudioAccounts: number;
     legacyAnnotations: number;
     datasetVersionRecords: number;
+    modelAppResources: number;
   }>(
     `
       select
@@ -88,7 +89,10 @@ async function getUserDeleteImpact(userId: string) {
         ) as "trainingRuns",
         (select count(*)::int from label_studio_accounts ls where ls.owner_user_id = u.id) as "labelStudioAccounts",
         (${legacyProjects} + ${legacyOperations}) as "legacyAnnotations",
-        (${collections} + ${imports}) as "datasetVersionRecords"
+        (${collections} + ${imports}) as "datasetVersionRecords",
+        ((select count(*)::int from model_apps where owner_user_id=u.id) +
+         (select count(*)::int from compute_jobs where app_requester_user_id=u.id
+          and status in ('queued','dispatching','running','stopping','recovery_pending'))) as "modelAppResources"
       from "user" u
       where u.id = $1
       limit 1
@@ -104,6 +108,7 @@ async function getUserDeleteImpact(userId: string) {
     labelStudioAccounts: 0,
     legacyAnnotations: 0,
     datasetVersionRecords: 0,
+    modelAppResources: 0,
   };
   const total =
     Number(impact.workspaceMemberships) +
@@ -112,7 +117,7 @@ async function getUserDeleteImpact(userId: string) {
     Number(impact.trainingRuns) +
     Number(impact.labelStudioAccounts) +
     Number(impact.legacyAnnotations) +
-    Number(impact.datasetVersionRecords);
+    Number(impact.datasetVersionRecords) + Number(impact.modelAppResources ?? 0);
 
   return { ...impact, total };
 }
@@ -218,7 +223,7 @@ export async function getUserResourceImpactAction(userId: string): Promise<Resou
   try {
     await ensureTargetExists(userId);
     const data = await backendAdminRequest(`/api/admin/users/${encodeURIComponent(userId)}/resource-impact`);
-    return { ok: true, workspaceMemberships: data.workspaceMemberships ?? 0, projects: data.projects ?? 0, datasets: data.datasets ?? 0, runs: data.runs ?? 0, activeJobs: data.activeJobs ?? [], totalBytes: data.totalBytes ?? 0 };
+    return { ok: true, workspaceMemberships: data.workspaceMemberships ?? 0, projects: data.projects ?? 0, datasets: data.datasets ?? 0, runs: data.runs ?? 0, modelApps: data.modelApps ?? 0, activeJobs: data.activeJobs ?? [], totalBytes: data.totalBytes ?? 0 };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error) };
   }

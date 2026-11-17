@@ -2,7 +2,7 @@ import { getSessionCookie } from "better-auth/cookies";
 import { type NextRequest, NextResponse } from "next/server";
 import { authHref } from "@/lib/auth-redirect";
 
-const protectedRoutes = ["/dashboard", "/dataset", "/tasks", "/annotate", "/admin", "/config", "/training", "/results", "/account"];
+const protectedRoutes = ["/apps", "/dashboard", "/dataset", "/tasks", "/annotate", "/admin", "/config", "/training", "/results", "/account"];
 
 function isProtectedPath(pathname: string) {
   return protectedRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
@@ -20,5 +20,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/annotate/:path*", "/dashboard/:path*", "/dataset/:path*", "/tasks/:path*", "/admin/:path*", "/config/:path*", "/training/:path*", "/results/:path*", "/account/:path*"],
+  matcher: ["/apps/:path*", "/annotate/:path*", "/dashboard/:path*", "/dataset/:path*", "/tasks/:path*", "/admin/:path*", "/config/:path*", "/training/:path*", "/results/:path*", "/account/:path*"],
 };

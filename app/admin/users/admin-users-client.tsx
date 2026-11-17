@@ -97,7 +97,7 @@ type BanDialogState = { user: AdminUserRow; reason: string } | null;
 type PasswordDialogState = { user: AdminUserRow; password: string } | null;
 type CleanupDialogState = {
   user: AdminUserRow;
-  impact: { workspaceMemberships: number; projects: number; datasets: number; runs: number; activeJobs: Array<{ run_slug: string; status: string }>; totalBytes: number };
+  impact: { workspaceMemberships: number; projects: number; datasets: number; runs: number; modelApps?: number; activeJobs: Array<{ run_slug: string; status: string }>; totalBytes: number };
   targetUserId: string;
 } | null;
 
@@ -632,6 +632,7 @@ export function AdminUsersClient({
             <DialogDescription>
               This account owns {cleanupDialog?.impact.datasets ?? 0} dataset version(s), including versions whose files were removed, {cleanupDialog?.impact.runs ?? 0} run(s), and {((cleanupDialog?.impact.totalBytes ?? 0) / 1024 / 1024).toFixed(1)} MB on disk.
               {` Projects: ${cleanupDialog?.impact.projects ?? 0}. Workspace memberships: ${cleanupDialog?.impact.workspaceMemberships ?? 0}.`}
+              {` Model Apps: ${cleanupDialog?.impact.modelApps ?? 0}.`}
               {(cleanupDialog?.impact.activeJobs.length ?? 0) > 0 && ` Active jobs: ${cleanupDialog?.impact.activeJobs.map((job) => `${job.run_slug} (${job.status})`).join(", ")}.`}
               {Boolean(cleanupDialog?.user.labelStudioAccountCount) && " Deleting the account also permanently deletes its Label Studio account, projects, annotations and uploaded images. Label Studio data cannot be transferred here."}
               {Boolean(cleanupDialog?.user.legacyAnnotationCount) && " This account also has data from the previous Annotation system. That data must be handled separately before the account can be deleted."}

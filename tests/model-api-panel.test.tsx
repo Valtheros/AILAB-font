@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { ModelApiPanel } from '@/components/tasks/model-api-panel';
+import { ModelApiPanel } from '@/components/model-apps/model-api-panel';
 import { ModelApiGuide } from '@/components/guide/model-api-guide';
 
 vi.mock('@/components/language-provider', () => ({ useLanguage: () => ({ language: 'en' }) }));

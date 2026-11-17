@@ -15,7 +15,6 @@ vi.mock('@/lib/api', () => ({ apiBaseUrl: () => '', artifactDownloadUrl: () => '
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('@/components/tasks/model-test-dialog', () => ({ ModelTestDialog: () => null }));
 vi.mock('@/components/tasks/evaluation-panel', () => ({ EvaluationPanel: () => <div>Evaluation panel</div> }));
-vi.mock('@/components/tasks/model-api-panel', () => ({ ModelApiPanel: () => <div>Model API panel</div> }));
 vi.mock('@/components/workspace/metrics-charts', () => ({ MetricsCharts: () => null, formatMetricValue: () => '-' }));
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -35,7 +34,7 @@ test('queued task shows a clear explanation when the worker is offline', () => {
   expect(screen.getByText(/งานยังอยู่ในคิวจนกว่าเครื่องจะพร้อม/)).toBeTruthy();
 });
 
-test('completed run keeps evaluation and API panels distinct after updates', async () => {
+test('completed run keeps evaluation without API or app publishing controls', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ logs: '', metrics: [] }))));
   const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const task: TrainingTask = { ...defaultConfig, id: 'task-1', displayName: 'Run', status: 'completed',
@@ -43,7 +42,9 @@ test('completed run keeps evaluation and API panels distinct after updates', asy
   const view = render(<TaskRun task={task} onRefresh={vi.fn(async () => {})} />);
   view.rerender(<TaskRun task={{ ...task }} onRefresh={vi.fn(async () => {})} />);
   await waitFor(() => expect(screen.getAllByText('Evaluation panel')).toHaveLength(1));
-  expect(screen.getAllByText('Model API panel')).toHaveLength(1);
+  expect(screen.queryByText('Model API panel')).toBeNull();
+  expect(screen.queryByText('สร้าง Model App')).toBeNull();
+  expect(screen.queryByText('ใช้งานผ่าน API')).toBeNull();
   expect(consoleError.mock.calls.some(([message]) => String(message).includes('same key'))).toBe(false);
   consoleError.mockRestore();
 });

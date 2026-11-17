@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { Check, Copy, KeyRound, LoaderCircle, Plus, ShieldOff, Trash2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useLanguage } from "@/components/language-provider";
@@ -57,7 +56,7 @@ function ModelApiPanelContent({ runSlug }: { runSlug: string }) {
   };
   const base = typeof window === "undefined" ? "" : window.location.origin;
   const example = endpoint ? `curl -X POST '${base}/api/v1/models/${endpoint.id}/predict' -H "Authorization: Bearer $AILAB_API_KEY" -H 'Idempotency-Key: example-request-1' -F 'file=@image.jpg' -F 'execution={"mode":"auto"}'` : "";
-  return <Card><CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5" />{thai ? "ใช้งานผ่าน API" : "Use through API"}</CardTitle></CardHeader><CardContent className="space-y-4">
+  return <section className="space-y-4"><h3 className="flex items-center gap-2 font-medium"><KeyRound className="h-5 w-5" />{thai ? "ใช้งานผ่าน API" : "Use through API"}</h3>
     {loading ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />{thai ? "กำลังโหลด" : "Loading"}</p> : unavailable ? <p className="text-sm text-muted-foreground">{thai ? "Model API ยังไม่พร้อมใช้งาน" : "Model API is not available yet."}</p> : <>
       {connected && !endpoint && <Button disabled={busy} onClick={() => void act(async () => { const data = await call('/api/model-endpoints', 'POST', { runSlug }); setEndpoint(data); })}><Plus className="h-4 w-4" />{thai ? "เปิด Model API" : "Enable Model API"}</Button>}
       {endpoint && <>
@@ -72,5 +71,5 @@ function ModelApiPanelContent({ runSlug }: { runSlug: string }) {
       </>}
     </>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-  </CardContent></Card>;
+  </section>;
 }
