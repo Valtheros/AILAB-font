@@ -45,7 +45,6 @@ function buildBackendRequestHeaders(request: NextRequest, session: NonNullable<A
 
   requestHeaders.set("x-user-id", session.user.id);
   requestHeaders.set("x-user-email", session.user.email);
-  requestHeaders.set("x-user-name", session.user.name ?? "");
   if (process.env.BACKEND_INTERNAL_TOKEN) {
     requestHeaders.set("x-internal-token", process.env.BACKEND_INTERNAL_TOKEN);
   }

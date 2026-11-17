@@ -28,8 +28,8 @@ function OwnedStorageUsage() {
   const load = useCallback(async (signal: AbortSignal) => {
     try {
       const response = await fetch(`${apiBaseUrl()}/api/storage`, { signal, cache: "no-store" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(computeMessage(data.code, thai, thai ? "โหลดข้อมูลพื้นที่ไม่สำเร็จ" : "Storage information is unavailable"));
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data) throw new Error(computeMessage(data?.code, thai, thai ? "โหลดข้อมูลพื้นที่ไม่สำเร็จ" : "Storage information is unavailable"));
       if (!signal.aborted) { setUsage(data); setError(""); }
     } catch (error) {
       if (!signal.aborted) setError(error instanceof Error ? error.message : "Storage unavailable");

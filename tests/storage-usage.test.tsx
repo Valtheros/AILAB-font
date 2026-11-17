@@ -34,6 +34,14 @@ test('changing accounts cannot retain old storage figures', async () => {
   expect(screen.queryByRole('meter')).toBeNull();
 });
 
+test.each([['en', 'Storage information is unavailable'], ['th', '\u0e42\u0e2b\u0e25\u0e14\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e1e\u0e37\u0e49\u0e19\u0e17\u0e35\u0e48\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08']])('empty proxy errors show a useful %s message instead of a JSON parser exception', async (language, message) => {
+  state.language = language;
+  fetchMock.mockResolvedValue(new Response('', { status: 502 }));
+  render(<StorageUsage />);
+  expect((await screen.findByRole('alert')).textContent).toBe(message);
+  expect(screen.queryByRole('meter')).toBeNull();
+});
+
 test('storage errors are translated and the admin form submits GiB, not bytes', async () => {
   state.language = 'th';
   fetchMock.mockResolvedValueOnce(response({ code: 'STORAGE_UNAVAILABLE' }, 503));

@@ -87,3 +87,12 @@ skips in test mode. Production rate limiting remains enabled. No real tenant key
 used. Actual PSU consent, MFA and Conditional Access must be verified after setup.
 
 Deployment and activation: deployment repository `deploy/PSU_LOGIN.md`.
+
+## Unicode Profiles
+
+Microsoft display names can contain Thai or other Unicode characters. Do not put
+them in plain HTTP headers: the Fetch Headers API rejects characters outside a
+ByteString. The backend proxy forwards only the authenticated user ID/email and
+the internal token. The unused `x-user-name` header was removed; backend ownership
+continues to be resolved from the database. `tests/backend-proxy.test.tsx` covers
+Thai/emoji names, spoofed identity headers and missing/unverified sessions.
