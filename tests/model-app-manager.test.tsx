@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { AppManager } from '@/components/model-apps/app-manager';
 import { defaultConfig } from '@/lib/trainingConfig';
@@ -25,15 +25,10 @@ beforeEach(() => {
     return response({ apps: [] });
   });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-async function openRuns() {
-  const select = await screen.findByRole('combobox', { name: 'Completed run' });
-  fireEvent.keyDown(select, { key: 'ArrowDown' });
-}
 async function selectRoad() {
-  await openRuns();
-  fireEvent.click(await screen.findByRole('option', { name: /Road model/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /Road model/ }));
 }
 
 test('creates an app from the hub using only completed runs and refreshes the list', async () => {
@@ -45,10 +40,10 @@ test('creates an app from the hub using only completed runs and refreshes the li
   });
   render(<AppManager />);
   fireEvent.click(screen.getByRole('button', { name: 'Create Model App' }));
-  await openRuns();
-  expect(screen.queryByRole('option', { name: /Pending model/ })).toBeNull();
-  expect(screen.queryByRole('option', { name: /Failed model/ })).toBeNull();
-  fireEvent.click(await screen.findByRole('option', { name: /Road model/ }));
+  await screen.findByRole('list', { name: 'Completed runs' });
+  expect(screen.queryByRole('button', { name: /Pending model/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /Failed model/ })).toBeNull();
+  await selectRoad();
   fireEvent.change(await screen.findByLabelText('App name'), { target: { value: 'Road app' } });
   fireEvent.change(screen.getByLabelText('URL name (a-z, 0-9, -)'), { target: { value: 'road' } });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Create preview version' }).hasAttribute('disabled')).toBe(false));
@@ -56,6 +51,36 @@ test('creates an app from the hub using only completed runs and refreshes the li
   expect(await screen.findByRole('heading', { name: 'Road app' })).toBeTruthy();
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(fetchMock.mock.calls.some(([url, init]) => String(url) === '/api/model-apps' && init?.method === 'POST' && JSON.parse(String(init.body)).runSlug === 'road-run')).toBe(true);
+});
+
+test('shows live search results under the input after typing pauses', async () => {
+  render(<AppManager />);
+  fireEvent.click(screen.getByRole('button', { name: 'Create Model App' }));
+  const search = await screen.findByRole('searchbox', { name: 'Search models' });
+  const other = screen.getByRole('button', { name: /Other model/ });
+  vi.useFakeTimers();
+
+  fireEvent.change(search, { target: { value: 'other' } });
+  act(() => vi.advanceTimersByTime(200));
+  fireEvent.change(search, { target: { value: '  MASK R-CNN  ' } });
+  act(() => vi.advanceTimersByTime(249));
+  expect(other.hasAttribute('disabled')).toBe(true);
+  act(() => vi.advanceTimersByTime(1));
+  expect(screen.queryByRole('button', { name: /Other model/ })).toBeNull();
+  const road = screen.getByRole('button', { name: /Road model/ });
+  fireEvent.click(road);
+  expect(road.getAttribute('aria-pressed')).toBe('true');
+
+  fireEvent.change(search, { target: { value: 'missing' } });
+  act(() => vi.advanceTimersByTime(250));
+  expect(screen.queryByRole('button', { name: /Road model/ })).toBeNull();
+  expect(screen.getAllByText('No matching models').some(element => !element.classList.contains('sr-only'))).toBe(true);
+
+  fireEvent.change(search, { target: { value: '' } });
+  act(() => vi.advanceTimersByTime(250));
+  expect(screen.getByRole('button', { name: /Road model/, pressed: true })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /Other model/ })).toBeTruthy();
+  expect(fetchMock.mock.calls.filter(([url]) => url === '/api/tasks')).toHaveLength(1);
 });
 
 test('offers a compatible existing app when the run uses a segmentation model', async () => {
@@ -83,7 +108,7 @@ test('API tab loads only the selected run and can create its endpoint', async ()
   fireEvent.click(await screen.findByRole('button', { name: 'Enable Model API' }));
   expect(await screen.findByRole('button', { name: 'Create key' })).toBeTruthy();
   expect(fetchMock.mock.calls.some(([url, init]) => String(url) === '/api/model-endpoints' && JSON.parse(String(init?.body)).runSlug === 'road-run')).toBe(true);
-  await openRuns(); fireEvent.click(await screen.findByRole('option', { name: /Other model/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /Other model/ }));
   expect(await screen.findByRole('button', { name: 'Enable Model API' })).toBeTruthy();
   expect(screen.queryByText('Model ID: endpoint-1')).toBeNull();
   expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('runSlug=')).map(([url]) => url)).toEqual(['/api/model-endpoints?runSlug=road-run', '/api/model-endpoints?runSlug=other-run']);
